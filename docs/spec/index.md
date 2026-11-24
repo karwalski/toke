@@ -19,5 +19,5 @@ Normative specification documents for the toke language, including grammar, sema
 - [Language Specification v0.3](/docs/spec/toke-spec-v0.3/) -- the full base specification (partially superseded by v0.4)
 - [Grammar (EBNF)](https://github.com/karwalski/toke/blob/main/docs/spec/grammar.ebnf) -- machine-readable grammar of record, with Appendix A (FIRST-sets, bounded lookahead)
 - [Idiom Standard v0.4](/docs/spec/idiom-v0.4/) -- normative minimal-code idiom rules
-- [Memory Model Specification](/docs/spec/memory-model/) -- formal arena allocation, lifetime, concurrency, and FFI memory rules
+- [Memory Model Specification](/docs/spec/memory-model/) -- allocation, lifetime, concurrency, and FFI memory rules
 - [Capability Model](/docs/spec/capabilities/) -- deny-by-default fs/net/env/process authority, scoped grants, grant channels, CAP001/CAP002 (ADR-0010, 138.19)

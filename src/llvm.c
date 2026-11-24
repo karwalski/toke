@@ -605,6 +605,12 @@ static const char *expr_struct_type(Ctx *c, const Node *n); /* defined later */
  * module call.  name_is_local first: the walk only runs on a collision. */
 static const Node *g_interp_host;   /* the STR_LIT whose \(..) is being lowered */
 static const char *g_interp_src;    /* ...and the source buffer it lives in */
+/* 127.299: the SSA temp of the conversion interp_render just emitted for an
+ * int/float interpolation operand, or -1.  That temp is the fresh malloc'd
+ * result of tk_str_fromi64_w / tk_str_fromfloat_w (str_from_int/_float), and
+ * no name, store or call but the literal's own tk_str_join_n ever sees it, so
+ * the literal frees it once join_n has copied it (see NODE_STR_LIT). */
+static int g_interp_conv = -1;
 static int alias_is_value(Ctx *c, const Node *id) {
     char nb[NAME_BUF];
     if (!id || id->kind != NODE_IDENT) return 0;
@@ -2889,7 +2895,8 @@ static int emit_int_to_str(Ctx *c, int v, const char *ity, int is_uns) {
     fprintf(c->out, "  %%t%d = call i64 @tk_str_fromi64_w(i64 %%t%d)\n", cv, v);
     int z = next_tmp(c);
     fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, cv);
-    if (!is_uns) return z;
+    g_interp_conv = -1;
+    if (!is_uns) { g_interp_conv = z; return z; }   /* 127.299 */
     int q = next_tmp(c), r = next_tmp(c);
     fprintf(c->out, "  %%t%d = udiv i64 %%t%d, 10\n", q, v);
     fprintf(c->out, "  %%t%d = urem i64 %%t%d, 10\n", r, v);
@@ -2994,6 +3001,7 @@ static int interp_render(Ctx *c, const Node *n, const Node *expr_node, int seg_v
         int z = next_tmp(c);
         fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, cv);
         seg_val = z;
+        g_interp_conv = z;                       /* 127.299 */
     } else if (unknown_ret) {
         /*
          * 127.80: the last resort used to be "assume it is
@@ -4411,8 +4419,10 @@ static int emit_expr(Ctx *c, const Node *n)
         }
         int accumulator = -1;
         int seg_vals[MAX_SEGS]; int nvals = 0;
+        int seg_own[MAX_SEGS];          /* 127.299: 1 = a conversion temp the join frees */
         for (int p = 0; p < nsegs; p++) {
             int seg_val;
+            int seg_conv = -1;
             const Node *ich = segs[p].is_expr
                 ? interp_child_at(n, segs[p].start, segs[p].end) : NULL;
             if (ich) {
@@ -4427,9 +4437,11 @@ static int emit_expr(Ctx *c, const Node *n)
                 const char *est = expr_struct_type(c, ich);
                 int unknown_ret = interp_operand_type_unknown(c, ich, ety, est);
                 int abi_bool = expr_abi_bool(c, ich, ety);
+                g_interp_conv = -1;
                 seg_val = interp_render(c, n, ich, seg_val, ety, est,
                                         unknown_ret, abi_bool, ich->rtype,
                                         0, 0, 0, 0);
+                seg_conv = g_interp_conv;        /* 127.299 */
             } else if (segs[p].is_expr) {
                 /* Build a synthetic wrapper program and parse it. The
                  * wrapper is allocated in the compiler arena so its
@@ -4520,9 +4532,11 @@ static int emit_expr(Ctx *c, const Node *n)
                         diag_rebase_pop();
                         c->src = saved_src;
                         g_interp_host = saved_host; g_interp_src = saved_hsrc;
+                        g_interp_conv = -1;
                         seg_val = interp_render(c, n, expr_node, seg_val, ety, est,
                                                 unknown_ret, abi_bool, NULL,
                                                 1, rb_prefix, rb_base, elen);
+                        seg_conv = g_interp_conv;        /* 127.299 */
                     }
                 }
             } else {
@@ -4539,6 +4553,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
                         seg_val, alen4, alen4, c->module_prefix, si4);
             }
+            seg_own[nvals] = seg_conv >= 0 && seg_conv == seg_val;
             seg_vals[nvals++] = seg_val;
         }
         if (nvals == 1) {
@@ -4558,6 +4573,15 @@ static int emit_expr(Ctx *c, const Node *n)
             fprintf(c->out, "  %%t%d = call i8* (i64, ...) @tk_str_join_n(i64 %d", accumulator, nvals);
             for (int q = 0; q < nvals; q++) fprintf(c->out, ", i8* %%t%d", seg_vals[q]);
             fputs(") ; interp\n", c->out);
+            /* 127.299: a number's segment is a fresh malloc'd conversion
+             * (str_from_int / str_from_float) that only this join_n saw;
+             * join_n copied it into a new string and kept no pointer to it,
+             * so it is dead here.  Not done for nvals == 1 (the conversion
+             * IS the result above) nor for a u64 at or above 2^63 (its
+             * value is a select, never equal to the recorded temp). */
+            for (int q = 0; q < nvals; q++)
+                if (seg_own[q])
+                    fprintf(c->out, "  call void @free(i8* %%t%d) ; 127.299 interp conversion\n", seg_vals[q]);
         }
         if (accumulator < 0) {
             /* empty interpolation — return empty string */

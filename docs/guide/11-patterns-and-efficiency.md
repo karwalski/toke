@@ -5,7 +5,7 @@ section: learn
 order: 11
 ---
 
-> **GENERATED** by `scripts/patterns/render_catalogue.py guide` from `patterns/catalogue.json` (sha256 `ea9b223e363c`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
+> **GENERATED** by `scripts/patterns/render_catalogue.py guide` from `patterns/catalogue.json` (sha256 `27ff5afb07e8`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
 
 **Estimated time: ~40 minutes**
 
@@ -1056,6 +1056,59 @@ f=main():i64{
 | `a` — avoid | 23 | 181 | 78.57 | 78592 |
 | `b` — avoid | 24 | 176 | 82.26 | 78608 |
 | `c` — canonical | 23 | 200 | 73.81 | 66576 |
+
+### str-char-read
+
+Read the single character at index i of a string to test or classify it.
+
+Any per-character test of a string: compare the character at i with one character, or classify it by its byte value. s.charcode(t;i) is a plain i64 (0 when i is out of range), so it needs no mt and carries no union; the one-character slice t.slice(i;i+1) is str!$sliceerr since 127.462 and must be read through mt or !. Compare against the byte value (44 is ','). Not for a substring longer than one character, and not for parsing structured text (s.split, s.fields, json.dec: idiom-v0.4#4). Owner answer R2 (2026-11-12) routes corpus records that read one character through a slice to this form.
+
+**Write this** — s.charcode(t;i)==44 (`patterns/str-char-read/a.tk`):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(line:str):i64{
+  let c=mut.0;
+  lp(let i=0;i<s.len(line);i=i+1){if(s.charcode(line;i)==44){c=c+1}};
+  <c
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let t=mut.0;
+  lp(let i=0;i<n;i=i+1){t=t+pat("ab,cde,\(i),f,gh")*10+i%7};
+  io.println("t=\(t)");
+  <0
+};
+```
+
+**Not this** — mt t.slice(i;i+1) =="," (`patterns/str-char-read/b.tk`):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(line:str):i64{
+  let c=mut.0;
+  lp(let i=0;i<s.len(line);i=i+1){if((mt line.slice(i;i+1){$ok:v v;$err:e ""})==","){c=c+1}};
+  <c
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let t=mut.0;
+  lp(let i=0;i<n;i=i+1){t=t+pat("ab,cde,\(i),f,gh")*10+i%7};
+  io.println("t=\(t)");
+  <0
+};
+```
+
+| form | proxy tokens | `--min` bytes | wall ms | RSS KB |
+|---|---|---|---|---|
+| `a` — canonical | 15 | 102 | 51.54 | 5616 |
+| `b` — avoid | 19 | 125 | 93.39 | 40128 |
 
 ## Errors (`err`)
 

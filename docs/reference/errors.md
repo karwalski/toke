@@ -1404,11 +1404,12 @@ f=main():i64{let m=mt $s{a:1;b:2} {$a:n n+10;$b:n n+20};<m};
 | Severity | error       |
 | Stage    | arena_check |
 
-Inside an `{arena ...}` block, assigning an arena-allocated value to a variable declared in an outer scope would create a dangling reference when the arena is freed.
+A value escapes an `{arena ...}` block: inside the block, at any depth, a value of a heap type (`str`, array, map, struct or sum, closure, or an error union whose value is one of these) is assigned to a module-level `mut` binding ([memory model](/docs/spec/memory-model/) §2.4). A scalar assigned to a module-level `mut`, and any store to a binding of the enclosing function, is not E5001. `{arena}` releases nothing today (§1.2), so no escape leaves a dangling reference; the full rule belongs to the `{arena}` ADR (127.525). There is no `fix`: bind the value inside the block, or move the store out of it.
 <!-- skip-check -->
 ```text
 m=test;
-f=bad(): i64 { let x = 0; {arena x = 1}; < x };
+let g=mut."";
+f=keep(n:i64):i64{{arena g="n=\(n)"};<0};
 ```
 ### E5002
 
@@ -2008,6 +2009,34 @@ program exits 1 with one line, `CAP003: <flag> refused: <reason>`. With
 There is no `fix`: the right flag depends on what the launcher meant. Conformance:
 C1883, C1884.
 
+### CAP004
+
+**OS-level enforcement is partial** (story 138.44). This is a **warning**, not an
+error. It is printed at start-up, once per cause, and only by a binary built with
+`os_enforce = true` or `--cap-os-enforce`
+([the capability spec](/docs/spec/capabilities/) §3.1). It means the kernel could not
+be told some of the grants, so for those grants the in-process broker alone enforces
+them. The program runs. The causes are:
+
+- the platform has no OS layer, or the kernel has no Landlock (or has it disabled);
+- `sandbox_init` refused the profile;
+- Landlock has no TCP rules (ABI < 4) while `net` is scoped;
+- an `fs.write` scope does not exist yet, so the rule went on its nearest existing
+  directory, which the line names;
+- a scope cannot be carried to the kernel (a control character in a path);
+- Landlock refused a rule, so no Landlock rules were applied;
+- a granted command (or a script's interpreter) lies outside `fs.read` and the read
+  baseline. Its own files cannot be read under the OS layer, so it will not run until
+  its install prefix (for example `/opt/homebrew`) is added to `fs.read`;
+- the seccomp socket filter was refused or does not exist for the architecture.
+
+The program prints one line,
+`CAP004: OS-level enforcement (os_enforce) is partial: <reason>; the in-process broker still enforces every grant`,
+with control characters escaped. With `TK_DIAG_JSON=1` a JSON line follows, with
+`severity` `warning`, `layer` (`sandbox`, `landlock`, `seccomp`, `plan` or `none`)
+and `reason`. There is no `fix`: nothing in the source corrects a kernel's abilities.
+Conformance: C2230.
+
 ## Semantic Warnings (W2xxx / W3xxx / W5xxx / W8xxx)
 
 Non-fatal diagnostics from later stages.
@@ -2099,7 +2128,7 @@ mut.1` and write `x = 2`. If a distinct binding was meant, rename it.
 | Severity | warning |
 | Stage    | arena_check (emitted by the type checker) |
 
-Escape analysis warns that a value may outlive its arena.
+Escape analysis warns that a non-heap value bound in a nested block (`if`, `lp` or `{arena}`) is returned. No memory is released when a block exits ([memory model](/docs/spec/memory-model/) §1.3), so no program it flags reads freed memory.
 
 ### W8001
 

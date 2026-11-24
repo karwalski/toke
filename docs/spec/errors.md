@@ -107,7 +107,7 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | E4078 | error | type_check | Struct literal gives a field more than once | n/s |
 | E4079 | error | type_check | `as str` cast of a composite (record / array / map) | n/s |
 | E4080 | error | type_check | Match on a record value names variants | n/s |
-| E5001 | error | arena_check | Value escapes arena scope | -- |
+| E5001 | error | arena_check | Value escapes arena scope | D770, D771, C2250 |
 | W5001 | warning | arena_check | Value may escape arena scope | n/s |
 | E5002 | error | arena_check | Unreachable code after return | -- |
 | W8001 | warning | ffi | Extern function declaration — FFI unsafe | n/s |
@@ -1124,17 +1124,27 @@ expects `*u8`).
 | **Code** | E5001 |
 | **Stage** | arena_check |
 | **Severity** | error |
-| **Message** | `value escapes arena scope: cannot assign arena-allocated value to outer variable` |
+| **Message** | `value escapes arena scope: a <type> assigned inside an {arena} block to module-level '<name>' outlives the block` |
 | **Fix field** | absent |
-| **Conformance test** | -- |
+| **Conformance test** | D770, D771, C2250 (D772, D773: shapes that must not report it) |
 
-**Notes:** Inside an `{arena ...}` block, assigning to a variable declared in an
-outer scope would cause a dangling reference when the arena is freed.
-
-**Example trigger:**
+**Notes:** A value that escapes an `{arena ...}` block (`memory-model.md`
+§2.4). The checker's rule: inside the block, at any depth, a value of a heap
+type (`str`, array, map, struct or sum, closure, or an error union whose value
+is one of these) assigned to a module-level `mut` binding. `got` is the
+value's type. Not E5001: a scalar assigned to a module-level `mut`, a store to
+a binding of the enclosing function, a value whose type the checker leaves
+unresolved, and anything outside an `{arena}` block. A module constant or
+immutable `let` cannot be assigned at all (E4070). `{arena}` releases nothing
+today (`memory-model.md` §1.2), so no escape leaves a dangling reference; the
+full rule, and whether an escape is rejected or copied out, belongs to the
+`{arena}` ADR (127.525). No `fix`: the repair (a binding inside the block, or
+the store moved out of it) depends on the program. Emitted since story
+127.526; before it the checker never reached the block's statements.
 ```text
 m=test;
-f=bad():i64{let x=0;{arena x=1};<x};
+let g=mut."";
+f=keep(n:i64):i64{{arena g="n=\(n)"};<0};
 ```
 
 ---

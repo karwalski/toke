@@ -94,6 +94,11 @@ char *tks_alloc(size_t n);
  * (the malloc fallback). */
 char *tks_seal(char *p, size_t n);
 
+/* 127.529: the sealed heap's counters for the TK_MEM_STATS exit report:
+ * bytes handed out of the reservation (headers and 16-byte rounding
+ * included) and bytes committed read/write.  Both 0 without the heap. */
+void tks_mem_stats(size_t *handed_out, size_t *committed);
+
 /* Copy n bytes into a new string and seal it.  s[0..n) must hold no 0 byte. */
 char *tks_dup(const char *s, size_t n);
 

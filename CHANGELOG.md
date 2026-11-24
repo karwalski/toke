@@ -36,6 +36,7 @@ toke 3.2.0 already accepts, so it builds on both.
 | 8 | **An integer other than the literal `0` is E4031 where a std call declares a record with fields** (the T-67 class beyond opaque handles; extends row 5). `http.clientget(5;..)`, `tls.read(5)`, `tls.protocol(5)`, `svg.render(5)`, `image.fliph(5)`, `vecstore.flush(5)`, `vecstore.count(5)` checked clean and died with SIGSEGV: the runtime reads a std record through its address. Row 5 judged only records with no fields; every std record slot is now judged the same way -- an integer literal other than `0`, an `i64` local or parameter, arithmetic, `h as i64` -- **E4031 with no `fix`** (`... -- the runtime reads a std record through its address, so only the record itself or the literal 0 may be passed`). The literal `0` (the null record) and a value of the record's own type are unchanged. Not covered: std.db's `row.` calls (`row.str(5;"k")`), which the checker does not judge at all (138.62). Measured before landing (batch Z237, this checker on `ee27591c`, `--check`): no source in the toke tree (695), ooke `main` (32; `make check-toke-candidate` passes), the website (25; `make check-toke` passes), toke-test-programs (3,573) or the corpus library (1,583) draws it; the corpus regen set (23,382) none either. Three conformance scripts carried a record in an `i64` callback or helper parameter and were migrated: C022 and C575 (`f=onconn(conn:i64)` for `tls.listen` -> `conn:$tlsconn`) and C1830 case c7 (`c:i64` passed to `sse.emitdata` -> `c:$ssectx`); C295 case 10, which pinned the old exemption, and C707 case 7 (`let p:i64=json.parse(..); json.has(p;..)`), now assert the refusal; `docs/stdlib/tls.md` documented the `conn:i64` callback and now writes `conn:$tlsconn`. | 138.46 | declare the parameter that holds the record with its type (`conn:$tlsconn`, `c:$httpclient`, `ctx:$ssectx`, `img:$imgbuf`); keep `0` as the null record |
 | 11 | **std.db's `row.` calls are argument-checked** (extends row 8). `row.str`, `row.i64`, `row.u64`, `row.f64` and `row.bool` name no import (`row` is a sub-namespace std.db's interface exports), so the checker judged none of their arguments: `row.str(5;"k")` checked clean and died with SIGSEGV, and a number in the column-name slot or a str in the row slot passed too. They are now judged against std.db's records as any std call is: an integer other than `0` where `$dbrow` is declared, and a value of another kind in either slot, is **E4031 with no `fix`**. Measured before landing (`--check`, this checker against the same tree without it): every source that calls `row.*` -- the toke tree (`test/e2e/e2e_db_open.tk`), ooke `main` (`src/store.tk`, `test/store/test_store.tk`) and the corpus's doc examples (6 records) -- draws the same diagnostics as before; toke-test-programs and the website have none. | 138.62 | pass the `$dbrow` (or a `$dbrow{cols:..}` literal) and a `str` column name; keep `0` as the null row |
 | 12 | **A field read of an opaque std type is E4034 at `--check`** (138.65). A type its `.tki` marks `"opaque": true` -- `$csvreader`, `$csvwriter`, `$dataframe`, `$jsonstream`, `$router`, `$handler`, `$middleware`, `$modelhandle` -- declares fields that are no layout toke can read, and the flag was never read: `w.sep` on `csv.writer(44)` printed 0, `d.ncols` on a frame printed its column array's address (`d.nrows` the column count), `r.id` on a router its first route pointer, and `r.pos` on a `$csvreader` (a registry token since 138.63) died with SIGSEGV. The read is now refused, with no `fix`. `$dashboard`, `$htmldoc`, `$llmstream`, `$canvasop` and `$dtreemodel`, whose fields are their checked C layout, lose the flag and read as before; `make check-tki-layout` fails a `tki-record` that is marked opaque. Record literals of opaque types still build. | 138.65 | Use the module's functions: `df.shape(d).rows`/`.cols` for a frame's counts; the csv, json stream, router and infer handles expose nothing else. Measured over the toke tree, ooke main, the website and toke-test-programs: no source reads one of these fields. |
+| 13 | **E5001 is emitted: inside an `{arena}` block, a heap value assigned to a module-level `mut` is rejected** (127.526). The check walked the block's children, and the block's one child is its statement list, so no input ever drew E5001 (`m=test;let g=mut.0;f=bad():i64{{arena g=1}<g};` checked clean). Now, at any depth of the block (inside a nested `if` or `lp` too), assigning a `str`, array, map, struct or sum, closure, or an error union whose value is one of these to a module-level `mut` binding is **E5001, with no `fix`**; `got` is the value's type. Not rejected: a scalar (the rule memory-model §2.4 stated before this change also rejected `g=1`, which allocates nothing and cannot escape; §2.4 now states the narrower rule, the module-level-mut part of route E1 of the `{arena}` ADR, ADR-0016, still Proposed), a store to a binding of the enclosing function (the ADR's open question), a value whose type the checker leaves unresolved, a local that shadows the module name. `{arena}` still releases nothing. Measured before landing (`--check`, this checker against its base `3a8f0ae6`): no program newly refused in the toke tree (695 sources), ooke `main` (32), the website (26) or toke-test-programs (3,573); none of them assigns inside `{arena}`. Tests: D770-D773. | 127.526 | Bind the value inside the block, or move the store to the module-level binding out of the block. |
 
 Measured before the flip with this checker against main `685aa852` (rows 127.319, 127.323
 and 127.462, batch Z211): 92 of 695 toke-tree sources and 15 of 509 documentation programs;
@@ -230,6 +231,30 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
 
 ### Build and CI gates
 
+- **`make check-tk-parse`: every committed `.tk` outside `test/` parses** (131.142).
+  131.52 found five that did not: the GitHub Linguist samples
+  (`linguist-submission/samples/toke/`, underscored identifiers and `=` for `==`) and
+  a stale `results/` copy of toke-test-programs' MED-009 solution. All are fixed (the
+  samples by `tkc --migrate` and the current std API; the map sample's size line reads
+  4, since std has no map delete). The gate runs `tkc --dump-ast` on every
+  `git ls-files '*.tk'` path outside `test/`, requires the Linguist samples to
+  `--check` with no output at all, and runs a `--selftest` negative control first. It
+  is in `make ci` and the CI workflow.
+- **`docs/spec/toke.lark`, and `make check-grammar-artefacts`** (131.52). The Lark
+  form of `toke.gbnf`, generated rule for rule by `scripts/gbnf_to_lark.py --write`
+  (one character per terminal, so llguidance's greedy lexer cannot change the
+  language). The new gate, in `make ci`, fails when `toke.lark` is not a fresh
+  generation of `toke.gbnf`, and, for each of Lark, XGrammar and llguidance that
+  is importable (`GRAMMAR_PY=<venv>/bin/python`, `bench/mask_cost/requirements.txt`),
+  when the engine's verdict differs from the reference recogniser's on
+  `test/gbnf/fragments.json`; an engine that is not installed is reported as
+  SKIPPED. All three agree on every fragment checked (Lark: every 8th, `--full`
+  for all). `make bench-mask-cost` measures per-token mask time and compile time
+  for toke against a generated Python-subset grammar
+  (`bench/mask_cost/python-subset.gbnf`, checked by `make bench-mask-cost-check`:
+  accepted ⇒ CPython `ast.parse` accepts) and JSON, under one vocabulary
+  (cl100k_base); results: `docs/about/reviews/mask-cost-2026-11-23.md`.
+
 - **`make fuzz-smoke` replays its inputs under libFuzzer** (127.480). It passed
   libFuzzer a seed directory plus adversarial files, a mix libFuzzer refuses
   ("Not a directory: ...; exiting", exit 1) before running anything, so every
@@ -294,6 +319,38 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
 - **std.process: a reaped child holds no file descriptor** (138.48). No toke call frees a process handle, and the child's stdin pipe was closed only when the handle was freed, so every spawn kept one descriptor for the life of the program: 400 spawn+wait+stdout+stderr iterations under `ulimit -n 256` failed from the 247th spawn on. The runtime now closes the stdin pipe when it reaps the child (`process.wait`, or a `process.poll`/`hasexited`/`isalive` that sees the exit) and reads what is already in the output pipes into the handle without blocking, so a poll-only spawner that never reads the output is bounded too. `wait`, `stdout`, `stderr` and `kill` answer a reaped handle as before; no API change (row option (a)). Test: C2060.
 
 - **`http.withmaxbody` bounds the response header block too** (138.49). The client read the header block until its blank line with no ceiling, cap or no cap, so a server that never ends its headers grew a capped client's memory for as long as the request lasted. A client carrying `http.withmaxbody` now refuses a header block over 65536 bytes with `$err` `response header block exceeds the cap (65536 bytes): ...` and closes the connection; a client without it reads as before (the 138.24 amendment's opt-in convention; a cap on every client is an open owner question). Test: C2061.
+
+### Added — OS-level enforcement of capability grants, opt-in (138.44)
+
+This implements D5 of `docs/decisions/138.19-scoped-capability-grants.md`, which the owner made a separate story on 2026-11-15; the design is `docs/decisions/138.44-os-enforcement.md`. **Nothing changes for a binary that does not opt in**: its IR is byte-identical, and the runtime never reaches the new code.
+
+- **`os_enforce = true`** in `tkc.toml [capabilities]`, or **`tkc --cap-os-enforce`**, bakes `@__tk_cap_baked_os`. At start-up, after the grants are final and before `main`, the runtime then has the kernel refuse what the grants do not admit:
+  - macOS: `sandbox_init(3)` with a profile generated from the grants. No entitlement is needed.
+  - Linux: Landlock, for file-system read, write and execute and, from ABI 4, TCP bind and connect ports. A seccomp filter refuses IPv4/IPv6 sockets and `io_uring_setup` when `net` is not granted.
+- **What it catches:** a user `extern` C function, an FFI call, or a sink with its gate removed. Each is refused outside the grants, where before it succeeded. C2230 shows `fopen` and a broker-removed stdlib build (`file.read`/`file.write`/`process.spawn`/`net.listen`/`http.geturl`) succeeding without the key and refused with it.
+- **The broker is unchanged and answers first.** CAP001 and CAP002 are the same text and JSON. Every capability conformance script (C188x, C470, C502, C511, C674, C1864, C2056, C545, C631, C112) passes with the layer forced on.
+- **The kernel rules are a superset of the grants.** They narrow `net` to ports rather than hosts, and leave `env.write` alone. They add a read-only system baseline (the OS image, time zones, resolver and CA files, `/dev`) with no home or temporary directory.
+- **Two side effects for a binary that opts in:** child processes inherit the rules, and the standard library's own reads outside the baseline are refused. A granted child runs to completion under the rules (C2230 2o–2q), but:
+  - it is refused any helper it execs itself (the macOS `git` shim's `xcrun`, `git-*` helpers);
+  - it is refused reads of its own files when they lie outside `fs.read` and the baseline (Homebrew, `/usr/local`). CAP004 names such a command at start-up.
+  - The `#!` interpreter of a granted script (and, for `#!/usr/bin/env NAME`, the `NAME` that resolves on `PATH`) is added to the exec rules, so the script itself runs.
+- **Review fixes before merge (round 2):**
+  - On macOS every granted child was killed with SIGABRT before `main`, because the profile denied dyld's read of `/`. The root directory itself (not beneath it) is now readable.
+  - The Linux seccomp filter let a system call of another architecture through. On x86-64, `int 0x80` could open a UDP socket under `net_none`. The 32-bit compat entry is now filtered (i386 `socketcall` is refused outright), and any other architecture is killed.
+  - When Landlock refuses a rule, no Landlock rules are applied, and CAP004 says so. Before, the ruleset could be narrower than the grant.
+  - `log.openaccess("/dev/stderr")`, which the broker admits with no grant, was refused under the OS layer. The process's own standard output and error are now writable: `/dev/fd` on macOS, and on Linux the file behind descriptors 1 and 2.
+- **New runtime warning CAP004.** Where the kernel cannot carry a grant, CAP004 says so once at start-up, as a text line and, under `TK_DIAG_JSON`, a JSON line with `layer` and `reason` and no `fix`. The program then runs with the broker alone for that grant. CAP004 is given when:
+  - there is no OS layer on the platform;
+  - the kernel has no Landlock;
+  - Landlock has no TCP rules;
+  - an `fs.write` scope does not exist yet;
+  - a scope holds a control character;
+  - Landlock refuses a rule (then none is applied);
+  - a granted command lies outside `fs.read` and the read baseline;
+  - the seccomp filter is refused.
+- **Diagnostics and records:** `TK_CAP_OS_SHOW=1` prints the generated rules. `--show-limits` prints `cap-os`. The `--companion` record says when the layer is on.
+- **Tests:** C2230, plus `test/stdlib/test_cap_os.c` in `make test-stdlib-capabilities`.
+- **Not yet run on a Linux kernel:** the Linux path was compiled here (zig cc, glibc x86_64 and aarch64, and musl) and its rule planning was unit-tested, but it has not been executed on Linux. On Linux CI its kernel cases run where Landlock is present and are named skips where it is not.
 
 ### Added — HTTP client controls, a header-carrying GET and a resolver (spec amendment 138.24)
 
@@ -410,6 +467,44 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   is `""`). Spec (generated std.csv block), `csv.tki` and `docs/stdlib/csv.md`
   change together. Test: C2001.
 
+- **std.infer's streaming loader refuses instead of returning a handle that is never loaded** (136.78). In a llama.cpp build (`TK_HAVE_LLAMACPP`), `tk_infer_load_streaming` returned success with a handle whose model and context stayed NULL, because its layer loop is a TODO: `tk_infer_is_loaded` said 0 and every `generate` / `embed` on it failed after a load that had succeeded. After the directory and shard checks (code -1) it now returns `is_err=1`, code -2 ("not implemented"), no handle and no prefetch thread; the prefetch machinery is kept behind `TK_INFER_STREAM_LAYER_LOOP`. The stub core and this repository's glue already failed and are unchanged, so no toke program changes behaviour. `docs/stdlib/infer.md` documents streaming as incomplete. Test: C2220.
+
+### Added — runtime: `TK_MEM_STATS=1` allocation report at exit (127.529)
+
+- **`TK_MEM_STATS=1` makes a toke program print one allocation report line to
+  stderr as it exits** (127.529): `tk-mem-stats: v=1 pid=… sealed_bytes=…
+  sealed_committed=… region_released_bytes=0 malloc_calls=… calloc_calls=…
+  realloc_calls=… alloc_bytes=… free_calls=… freed_bytes=…
+  live_bytes_delta=…`. It is the counter source that ADR-0016's measurement
+  plan gates region slices on (bytes per iteration). It replaces the scratch
+  `tks_top` destructor and `DYLD_INSERT_LIBRARIES` interposer of the 127.299
+  harness. The report prints on a normal exit, a trap, `os.exit`,
+  `process.exit` and a recorded failure (a failed `test.eq`). It prints at
+  most once. The malloc fields come from libmalloc's `malloc_logger` hook and
+  read `na` off Darwin and in ASan builds. Counters are atomic, so every
+  thread is counted. With the variable unset nothing is installed: CPU time
+  on a 3M-iteration interpolation loop was 0.747 s median for both the base
+  and the candidate. Format and recipe: `docs/runtime-abi.md` §10.1. Test:
+  C2260.
+
+### Changed — code generation: interpolation frees its number conversions (127.299)
+
+- **A string interpolation frees the number conversions it made** (127.299).
+  In `"k\(i)=\(x)"` every int or float segment was converted into a fresh
+  `malloc`'d string, copied by the literal's single `tk_str_join_n`, and then
+  kept forever, although no toke value could reach it. The literal now frees
+  those conversions right after the join. Nothing a program can see changes:
+  the result is the same sealed string, a one-segment `"\(n)"` still returns
+  its conversion, and string, bool and u64/u8/u16/u32 operands are not
+  touched. Measured on 1M iterations of `"k\(i)=\(i*3);f=\(1.5)"`: peak RSS
+  went from 154.9 MB to 32.3 MB, frees from 14 to 3,000,015, with identical
+  output and time. The ooke template harness (127.257) is unchanged, because
+  its bytes are sealed token slices and builder output. This is the one slice
+  that `docs/decisions/127.299-function-arena.md` finds provably safe without
+  escape analysis. That note also records the per-function-arena and
+  `{arena}` designs the owner asked for (answer 1.13). Test: C2200
+  (ASan+UBSan, `TK_STR_VERIFY=1`).
+
 ### Added — lint rules for the pre-132.15 spec-page shapes (131.138)
 
 Four new hints, one per long form the withdrawn specification page prescribed. They
@@ -453,6 +548,16 @@ Tests: D730–D734, C2101 (a differential of each fix over every sign combinatio
 
 ### Changed — diagnostics
 
+- **`{arena ...};` parses** (127.527). An arena block now takes one optional
+  trailing `;`, as an `if` or `lp` block does; it was E2002 ("unexpected token in
+  expression, got ';'"), so every documented example written with the `;` failed
+  to parse. `toke.gbnf` and `toke.lark` (`item ::= ... | arena (ws ";")?`) and a
+  `grammar.ebnf` note follow; no production, keyword or lookahead is added.
+  Tests: D774, `make check-gbnf` (`test/gbnf/extra/x38.tk` now accepted by both).
+- **E5001's documentation describes the check the compiler makes** (127.528):
+  `docs/spec/errors.md`, `docs/reference/errors.md`, `docs/reference/statements.md`,
+  `docs/spec/semantics.md` §7.3, `docs/spec/memory-model.md` §2.4 and the guide, with
+  an example that parses and draws exactly E5001.
 - **E4026 (wrong argument count) has no `fix` field** (138.51, AGENTS.md §6). The
   four texts it carried were advice, not a repair right in every case: which side
   is wrong (the call, or an interface that disagrees with its implementation) and
@@ -469,6 +574,20 @@ Tests: D730–D734, C2101 (a differential of each fix over every sign combinatio
 
 ### Documentation and claim gates
 
+- **The memory model describes the allocation model that ships** (127.524, owner answer
+  1.13 (b)). `docs/spec/memory-model.md` promised a per-function arena freed at scope exit
+  (§1.1, §1.3) and a copy of every returned value into the caller's arena (§2.3); no
+  implementation ever did either. The amended text, normative, says what ships: values come
+  from `malloc` or the S1 sealed-string heap and are not released before exit, except
+  closure environments (124.0c) and an interpolation's number conversions (127.299); an
+  implementation may release only what no toke value can reach. New §1.6 states the leak
+  budget per workload (bytes per iteration; unbounded growth for a long-running server).
+  `{arena}` parses and type-checks but releases nothing until the ADR of 127.525, and E5001
+  is reserved for an escape from it (not emitted today: 127.526). §3's per-task arenas, §5's
+  "reference counting: not present" and §6.4's bound are corrected. The docs that restated
+  the old promise (semantics §7.3, both E5001 entries, the guide's arena section, the
+  statements reference, design.md, known-limitations, runtime-abi) now say the same. No
+  compiler or runtime behaviour changes.
 - **The canonical `models` fact states the Gate 2 withdrawal** (127.459, owner decision
   D4): `docs/about/canonical.md` §8 and `canonical.json` "models" now say the PASS of
   2026-05-24 was withdrawn on 2026-11-15, that Gate 2 has no standing verdict and Gate 3
@@ -552,6 +671,20 @@ Tests: D730–D734, C2101 (a differential of each fix over every sign combinatio
   file, env, process, time, log, test); no `.tki` or runtime signature changed.
 - **The stale `tree-sitter-toke/` copy is archived** (127.457); the maintained grammar is
   `tree-sitter-toke/` in karwalski/toke-spec.
+
+- **The pattern catalogue gains `str-char-read`: one character is read with
+  `s.charcode(t;i)`, not a one-character slice** (131.143; owner answer R2, 2026-11-12).
+  Since 127.462 `t.slice(i;i+1)` is `str!$sliceerr`, so a corpus record that compared one
+  character as a slice no longer checks; R2 routes those records to agent repair with a
+  catalogue pattern. Two forms were measured through the catalogue process (fixtures
+  `patterns/str-char-read/{a,b}.tk`, byte-identical output; tokens by `count_tokens.py`,
+  runtime by `bench/patterns/run_patterns.py`, verdicts derived by `render_catalogue.py
+  ingest`): `s.charcode(t;i)==44` is canonical (best on both axes), `mt t.slice(i;i+1){..}==","`
+  is more tokens and slower. Recorded under load, so the entry is provisional with
+  `load_warning` until the 131.25 re-measure. The card gains the rule
+  `one char: s.charcode(t;i)==44, no slice`; the spec page, guide chapter and card snippet
+  are re-rendered and the must-merge inputs re-pinned. toke-tokenizer's must-merge list is
+  re-derived (branch `fix/131.143-mustmerge`; merge both together).
 
 - **The pattern verdict tooling implements the identical-code tie, and acc-array is
   re-measured** (127.440, 127.437; owner decision 4.11 (d), 2026-11-15). `derive_verdicts`

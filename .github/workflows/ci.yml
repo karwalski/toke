@@ -101,6 +101,10 @@ jobs:
       - name: Shipped examples compile
         run: make check-examples
 
+      # 131.142: every committed .tk outside test/ parses.
+      - name: Committed toke sources parse
+        run: make check-tk-parse
+
       # Every diagnostic the compiler emits is documented, and errors.md lists
       # no dead code.
       - name: Diagnostic codes are documented

@@ -1,10 +1,10 @@
-## Patterns — measured canonical forms (catalogue ea9b223e363c; 46 entries, 46 provisional)
+## Patterns — measured canonical forms (catalogue 27ff5afb07e8; 47 entries, 47 provisional)
 - cond: if: return per branch, never mut flag [cond-bind-if] · el if chain, never nested if/el [cond-elif-chain] · combine tests in one expr-if, no flags [cond-bool-combine]
 - cond: clamp: one el if chain expression [cond-clamp] · bool text: expr-if picks the literal [cond-bool-render]
 - acc: sum: lp into a mut, not reduce [acc-sum] · count-if: lp + if + counter [acc-count-if] · min: xs.sort(&cmp).get(0); big N: lp [acc-min-max]
 - acc: x=x.append(v) [acc-array] · small key set: parallel arrays + .set [acc-map-build] · dedupe: if(!out.contains(v)) append [acc-dedupe]
 - str: loops: s.builder, not concat [str-build-loop] · assemble strings by interpolation [str-interp-vs-join] · int to text: n as str, not s.fromint [str-num-format]
-- str: pad: lp prepending with s.concat [str-repeat-pad] · @str: build .append, render s.add [str-array-render]
+- str: pad: lp prepending with s.concat [str-repeat-pad] · @str: build .append, render s.add [str-array-render] · one char: s.charcode(t;i)==44, no slice [str-char-read]
 - err: propagate errors with !$err, not mt [err-propagate] · error default: precondition if, not mt [err-default] · validate: sequential guard returns [err-validate-early]
 - parse: json.dec + typed accessors [parse-json] · csv: s.split lines, then s.split "," [parse-csv-line] · delimited fields: s.split(line;",") [parse-delim-split]
 - parse: whitespace fields: s.fields(line) [parse-fields] · parse int: mt s.toint(txt) with default [parse-int] · k=v lines: s.split twice, then m.set [parse-kv-lines]

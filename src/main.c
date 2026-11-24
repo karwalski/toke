@@ -370,6 +370,8 @@ static const char *const HELP_SECTIONS[] = {
     "  --allow-env[=KEY,PREFIX*,...]  --allow-run[=CMD,...]  Grant env write / spawn\n"
     "  --allow-all         Grant every capability\n"
     "  --cap-enforce       Accepted for compatibility; enforcement is the default\n"
+    "  --cap-os-enforce    Also have the OS enforce the grants (macOS sandbox, Linux\n"
+    "                      Landlock/seccomp); tkc.toml: os_enforce = true\n"
     "\n"
     "Packages (ADR-0004, docs/reference/package-manifest.md):\n"
     "  tkc pkg init|add|remove|resolve|fetch|list  Manage pkg.toml and pkg.lock\n"
@@ -2088,6 +2090,7 @@ int main(int argc, char **argv)
             if (cap_flag_rc < 0) return EUSAGE;
         }
         else if (!strcmp(argv[i], "--cap-enforce"))      { limits.cap_enforce = 1; limits.cap_present = 1; }
+        else if (!strcmp(argv[i], "--cap-os-enforce"))   { limits.cap_os = 1; limits.cap_present = 1; }  /* 138.44 */
         else if (!strncmp(argv[i], "--config=", 9)) { /* already handled */ }
         else if (!strcmp(argv[i], "--target")) {
             if (++i >= argc) { fputs("tkc: --target requires an argument\n", stderr); return EUSAGE; }
@@ -2143,6 +2146,7 @@ int main(int argc, char **argv)
         printf("  cap-present  = %d\n", limits.cap_present);
         printf("  cap-grants   = 0x%x\n", limits.cap_grants);
         printf("  cap-enforce  = %d\n", limits.cap_enforce);
+        printf("  cap-os       = %d\n", limits.cap_os);   /* 138.44 */
         /* 138.19: the scopes, and whether run-time flags narrow (D2). */
         printf("  cap-runtime  = %s\n", !limits.cap_set ? "union (no grant set baked)"
                                        : limits.cap_runtime_union ? "union" : "narrow");

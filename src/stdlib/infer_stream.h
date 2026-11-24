@@ -74,6 +74,9 @@ const char *tk_infer_detect_storage_type(const char *path);
  * eventually pass the handle to tk_infer_unload, which joins the prefetch
  * thread and releases all resources.
  *
+ * NOT IMPLEMENTED (136.78): the layer loop is missing, so no build returns a
+ * handle.  With TK_HAVE_LLAMACPP the model_dir and shard checks run (code -1
+ * on failure), then the call returns is_err=1, code=-2.
  * Without TK_HAVE_LLAMACPP: always returns is_err=1, code=-2.
  */
 TkModelHandleResult tk_infer_load_streaming(const char  *model_dir,

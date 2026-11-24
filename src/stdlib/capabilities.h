@@ -215,4 +215,15 @@ extern const TkCapBakedScope *const __tk_cap_baked_scopes;
 extern const int      __tk_cap_baked_nscopes;
 extern const int      __tk_cap_baked_runtime;
 
+/*
+ * 138.44 (D5): OS-level enforcement behind the broker, opt-in.  1 when the
+ * binary was built with `os_enforce = true` in tkc.toml [capabilities] or
+ * `tkc --cap-os-enforce`: tk_cap_init then also asks the kernel to refuse
+ * what the grants do not admit (macOS sandbox profile, Linux Landlock and
+ * seccomp; src/stdlib/cap_os.h), so native code and a sink the broker
+ * misses are denied too.  The weak default is 0: no change.  Where the
+ * kernel cannot enforce a grant, CAP004 (a warning) says so at start-up.
+ */
+extern const int      __tk_cap_baked_os;
+
 #endif /* TK_CAPABILITIES_H */

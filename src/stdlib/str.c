@@ -57,6 +57,9 @@ StrSliceResult str_slice(const char *s, uint64_t start, uint64_t end)
 const char *str_from_int(int64_t n)
 {
     /* "-9223372036854775808" is 20 chars + NUL */
+    /* 127.299: stays malloc'd, never sealed.  Generated code free()s this
+     * result (via tk_str_fromi64_w) after an interpolation's join_n copied
+     * it; converting it to tks_alloc needs that free removed (C2200). */
     char *buf = malloc(24);
     if (!buf) return NULL;
     snprintf(buf, 24, "%" PRId64, n);
@@ -65,6 +68,7 @@ const char *str_from_int(int64_t n)
 
 const char *str_from_float(double n)
 {
+    /* 127.299: stays malloc'd -- see str_from_int. */
     char *buf = malloc(64);
     if (!buf) return NULL;
     snprintf(buf, 64, "%g", n);
@@ -816,10 +820,24 @@ char *tks_seal(char *p, size_t n)
     return p;
 }
 
+/* 127.529: TK_MEM_STATS.  Reads the counters the heap keeps anyway, so the
+ * report costs nothing while it is off.  tks_top may run past the end of the
+ * reservation once it is exhausted (each failed bump still adds). */
+void tks_mem_stats(size_t *handed_out, size_t *committed)
+{
+    *handed_out = __atomic_load_n(&tks_top, __ATOMIC_RELAXED);
+    *committed  = __atomic_load_n(&tks_committed, __ATOMIC_RELAXED);
+}
+
 #else /* !TKS_HEAP: every string is a malloc'd, unsealed C string */
 
 char *tks_alloc(size_t n) { return (char *)malloc(n + 1); }
 char *tks_seal(char *p, size_t n) { (void)n; return p; }
+void tks_mem_stats(size_t *handed_out, size_t *committed)
+{
+    *handed_out = 0;
+    *committed  = 0;
+}
 
 #endif /* TKS_HEAP */
 

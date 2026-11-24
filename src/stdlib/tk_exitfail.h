@@ -71,6 +71,12 @@ TK_EXITFAIL_WEAK const char *volatile tk_exitfail_reason = NULL;
  * before its `ret` (strong definition in the entry module); 0 until then. */
 TK_EXITFAIL_WEAK volatile int tk_exitfail_main_status = 0;
 
+/* 127.529: the TK_MEM_STATS exit report, which tk_runtime_init installs
+ * when TK_MEM_STATS=1 (NULL otherwise).  An atexit handler registered before
+ * this file's does not run once it _exit()s, nor does any after os.exit's
+ * _exit(), so both call it first.  It prints at most once. */
+TK_EXITFAIL_WEAK void (*volatile tk_exit_report)(void) = NULL;
+
 TK_EXITFAIL_WEAK void tk_exitfail_atexit(void)
 {
     if (tk_exitfail_count <= 0) return;
@@ -82,6 +88,7 @@ TK_EXITFAIL_WEAK void tk_exitfail_atexit(void)
             status, (long)tk_exitfail_count,
             tk_exitfail_reason ? tk_exitfail_reason : "(unknown)");
     fflush(stderr);
+    if (tk_exit_report) tk_exit_report();
     _exit(status);
 }
 

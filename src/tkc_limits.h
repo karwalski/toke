@@ -376,6 +376,9 @@ typedef struct {
      * D4 warning release reports (W9012), from cap_config. */
     int cap_set;
     int cap_runtime_union;
+    /* 138.44: os_enforce = true / --cap-os-enforce bakes @__tk_cap_baked_os
+     * (OS-level enforcement behind the broker); sets cap_present, not cap_set. */
+    int cap_os;
     int cap_nscopes;
     TkcCapScope cap_scopes[TKC_CAP_MAX_SCOPES];
     int cap_nquoted;
@@ -404,6 +407,7 @@ static inline void tkc_limits_defaults(TkcLimits *lim)
     lim->cap_enforce      = 0;
     lim->cap_set          = 0;   /* 138.19 */
     lim->cap_runtime_union = 0;
+    lim->cap_os           = 0;   /* 138.44 */
     lim->cap_nscopes      = 0;
     lim->cap_nquoted      = 0;
     lim->cap_config       = 0;

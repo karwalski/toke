@@ -453,6 +453,10 @@ static void emit_capabilities_section(FILE *out, const TkcLimits *lim)
             lim->cap_grants == TK_CAP_ALL ? "allow-all" : "enforce (deny-by-default)",
             !lim->cap_set ? "grant (no grant set baked)"
                           : lim->cap_runtime_union ? "union (may widen)" : "narrow only");
+    /* 138.44: the OS layer, only when it is on (other records unchanged). */
+    if (lim->cap_os)
+        fprintf(out, "OS-level enforcement: **on** (os_enforce): the kernel also refuses "
+                     "what these grants do not admit.\n\n");
     /* 138.19: each class with its scopes, or "(whole class)". */
     tkc_cap_describe(out, lim, "- ");
     if (!(lim->cap_grants & 0x1Fu) && lim->cap_nscopes == 0)   /* the five class bits */

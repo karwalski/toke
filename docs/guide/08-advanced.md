@@ -93,43 +93,34 @@ There are **no implicit conversions** in toke. Every conversion must use `as`. T
 ## Arena blocks
 
 :::note
-Arena blocks (`arena{...}`) are a planned feature. The syntax is supported by the parser but arena-based allocation is not yet implemented in the compiler backend.
+`{arena ...}` blocks parse and type-check, but they do not release memory. The [memory model](/docs/spec/memory-model/) (§1, amended by story 127.524) describes what ships: values the runtime creates are not freed before the program exits, apart from closure environments and the number conversions inside a string interpolation. Release by `{arena}` is the subject of an ADR (story 127.525).
 :::
 
-By default, all allocations within a function are freed when the function returns. Arena blocks create shorter-lived allocation regions:
+An arena block marks a region whose temporaries a future release of toke may free when the block exits. Today the block runs exactly like any other block:
 
 ```
 f=processlargedata(items:@$str):$str{
   let result=mut."";
   lp(let i=0;i<items.len;i=i+1){
-    arena{
+    {arena
       let temp=str.upper(items.get(i));
       let processed=str.replace(temp;" ";"-");
-      result=result+processed+"\n";
-    };
+      result="\(result)\(processed)\n"
+    }
   };
-  <result;
+  <result
 };
 ```
 
-The `arena{ ... }` block allocates `temp` and `processed` within a sub-arena. When the block exits, those allocations are freed immediately -- not at function exit. The `result` variable, bound outside the arena, survives.
+`temp` and `processed` are bound inside the block. Nothing is freed when it exits, so `result`, bound outside it, is safe either way.
 
-### Why use arena blocks?
+### Memory in long-running loops
 
-In a loop processing large data, allocations can accumulate. Without arena blocks, every temporary string, array, or struct lives until the function returns. Arena blocks let you free temporaries per iteration, keeping memory usage bounded.
+Because nothing is released, every temporary string, array or struct a loop makes stays allocated until the program exits. A short-lived program pays its total allocation once; a server or a long polling loop grows by what each iteration allocates (memory model §1.6). Keep per-iteration allocation small in such loops.
 
 ### Arena safety
 
-Returning a reference to an arena-allocated value across the arena boundary is a compile error (E5001):
-
-```
-arena{
-  let temp=@(1;2;3);
-  result=temp;
-};
-```
-
-The compiler prevents use-after-free at the arena boundary.
+Inside an `{arena}` block, assigning a string, array, map, struct or closure to a module-level `mut` binding is compile error E5001 (memory model §2.4). Assigning a number or a `bool` is allowed, and so is writing to the function's own outer bindings, as `result` is above. Since the block releases nothing, no program reads freed memory today.
 
 ## Module versioning (future)
 

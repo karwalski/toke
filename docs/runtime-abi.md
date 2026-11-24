@@ -54,7 +54,11 @@ Strings are **C strings**: null-terminated `ptr` (pointer to `i8`).
 - String literals are emitted as LLVM global constants
   (`@.str.N = private constant [K x i8] c"...\\00"`).
 - Runtime-created strings are never freed: the runtime does not track
-  them, and nothing may `free()` one that reached toke code.  Most are
+  them, and nothing may `free()` one that reached toke code.  The one
+  exception never reaches toke code (127.299): an interpolation literal frees
+  the `tk_str_fromi64_w` / `tk_str_fromfloat_w` conversions it emitted for
+  its own segments, right after its `tk_str_join_n` has copied them
+  (`docs/decisions/127.299-function-arena.md` §6).  Most are
   `malloc`'d; since 127.170 the core producers return **sealed strings**
   from the string heap instead, which carry their length (§3.1).  A sealed
   string is still a NUL-terminated C string, so nothing that reads one with
@@ -118,9 +122,10 @@ prototype branch.
    with the bytes or be recomputed.
 5. **Strings are never freed today**, in the runtime or in any generated code
    (§3: "the runtime does not track or free them"). `docs/spec/memory-model.md`
-   §1 describes per-scope arenas with bulk release; the implementation has
-   never had them. Every option below that allocates differently inherits that
-   gap rather than causing it.
+   §1 described per-scope arenas with bulk release, which the implementation
+   never had; since 127.524 (2026-11-24) it describes this never-free model
+   instead. Every option below that allocates differently inherits that
+   model rather than causing it.
 
 #### Consumer inventory
 
@@ -220,9 +225,9 @@ and `tls.group` added one `str`-returning export.
 - **Targets without `mmap`** (`Makefile.wasm`): `tks_init` fails and
   `tks_alloc` falls back to `malloc` — every string unsealed, behaviour
   identical to today.
-- **Future freeing:** if strings ever get the arenas `memory-model.md` §1
-  describes (or ADR-0006's release), the region must become per-arena and
-  release must clear its bits. S1 does not make that harder; it makes the
+- **Future freeing:** if strings ever get released (the `{arena}` ADR of
+  127.525, `memory-model.md` §1.2 and §7.2, or ADR-0006's release), the
+  region must become per-arena and release must clear its bits. S1 does not make that harder; it makes the
   current never-free behaviour explicit.
 - **135.18 (`fix/ea-bytes`, held):** independent — arrays and strings share no
   code path in this plan.
@@ -1592,6 +1597,78 @@ arguments at any point during execution.
 
 `tk_runtime_init` also calls `tk_cap_init(argc, argv)` to initialise the
 capability broker (see §12).
+
+### 10.1 `TK_MEM_STATS=1` exit report (story 127.529)
+
+With `TK_MEM_STATS=1` in a toke program's environment, the program prints one
+line to stderr as it exits:
+
+```
+tk-mem-stats: v=1 pid=4242 sealed_bytes=6400 sealed_committed=67108864 region_released_bytes=0 malloc_calls=411 calloc_calls=1 realloc_calls=0 alloc_bytes=22528 free_calls=400 freed_bytes=12800 live_bytes_delta=9728
+```
+
+Any other value (`0`, `yes`, `11`) or no variable at all prints nothing.
+`tk_runtime_init` reads the variable once, first of all. When it is not `1`
+nothing is installed, so a program without it runs the same code as before
+127.529. Measured on 2026-11-24 with a loop of 3,000,000 three-number
+interpolations, CPU time over 15 interleaved runs: median 0.747 s with the
+base stdlib and 0.747 s with the candidate (variable unset). With the
+variable set it took 1.052 s: each `malloc` and `free` pays for the hook and a
+`malloc_size`.
+
+| Field | Meaning |
+|---|---|
+| `v` | Format version. A field is only ever added at the end, and `v` goes up when one is. |
+| `pid` | The reporting process. A forked child that exits through `exit()` reports too, under its own pid, and its counters include those it inherited from its parent. The http server's workers leave through `_exit()` and print nothing. |
+| `sealed_bytes` | Bytes handed out of the sealed string heap (§3.1), headers and 16-byte rounding included: `tks_top`, which the heap keeps anyway. It goes past the reservation only after the reservation is exhausted, because each failed bump still adds. 0 without the heap. |
+| `sealed_committed` | Sealed-heap bytes committed read/write, in 64 MiB chunks. An upper bound on what the heap holds resident. |
+| `region_released_bytes` | Always 0. A region (ADR-0016) will release bytes here once slice (ii) lands. |
+| `malloc_calls`, `calloc_calls`, `realloc_calls` | Calls made after `tk_runtime_init`, by every thread and every library in the process, libc included. |
+| `alloc_bytes` | Usable size (`malloc_size`) of every block those calls returned. A `realloc` counts its whole new block. |
+| `free_calls`, `freed_bytes` | `free()` calls on a non-NULL pointer, and the usable size of the blocks they released. The old block of a moving `realloc` is in neither. |
+| `live_bytes_delta` | Change in the bytes all malloc zones hold, from `tk_runtime_init` to the report (`malloc_zone_statistics`). It is exact where the two counters above are not, so use this one for the net figure. It is signed. |
+
+**Platforms.** The malloc fields come from libmalloc's `malloc_logger` hook.
+libmalloc tests that hook on every call whether or not it is set, so setting
+it costs nothing extra while the report is off. Off Darwin, and in an
+ASan-built program (ASan's allocator replaces libmalloc's, and the hook never
+fires), these fields read `na`. The sealed fields are always reported.
+
+**When it prints.** It prints from an `atexit` handler that `tk_runtime_init`
+registers before any other, so it runs last and counts the frees of the other
+handlers. It also prints from the `_exit()` paths that end a toke program:
+`os.exit`, `process.exit`, and the recorded-failure handler of `tk_exitfail.h`
+(a failed `test.eq`, an http server that did not start). There it prints just
+before `_exit`, through the weak `tk_exit_report` pointer in that header. It
+prints at most once. A process killed by a signal, or one that calls `_exit`
+from C glue, prints nothing.
+
+**Thread safety.** Every counter is updated with a relaxed
+`__atomic_fetch_add` on the allocating thread. C2260 runs 4 threads × 20,000
+`malloc`/`free` pairs and requires that all of them are counted. A scratch copy
+that used plain `++` instead lost about a third of them.
+
+**Measuring bytes per iteration (the ADR-0016 / 127.299 harness).** This
+report replaces the scratch `tks_top` destructor and the
+`DYLD_INSERT_LIBRARIES` interposer of the 127.299 note §8. Run the harness
+binary twice, at two iteration counts, and take the slope:
+
+```sh
+for n in 20 200; do
+  TK_MEM_STATS=1 Z256_MODE=lex Z256_ITERS=$n build/testbin/test_z256bench \
+    2>&1 >/dev/null | grep '^tk-mem-stats:' > stats.$n
+done
+f() { sed -n "s/.* $2=\([-0-9]*\).*/\1/p" "$1"; }
+for k in sealed_bytes live_bytes_delta malloc_calls free_calls; do
+  echo "$k/iter = $(( ($(f stats.200 $k) - $(f stats.20 $k)) / 180 ))"
+done
+```
+
+The ADR's primary metric, bytes per iteration, is
+`(sealed_bytes + live_bytes_delta − region_released_bytes)` per iteration. A
+slice is accepted when that slope is zero for the code inside `{arena}`. Run
+both the candidate and the base built from the same tree, on the same machine.
+Do not compare across platforms: allocator rounding differs.
 
 ---
 

@@ -4,7 +4,7 @@ slug: patterns-v0.4
 section: spec
 ---
 
-> **GENERATED** by `scripts/patterns/render_catalogue.py spec` from `patterns/catalogue.json` (sha256 `ea9b223e363c`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
+> **GENERATED** by `scripts/patterns/render_catalogue.py spec` from `patterns/catalogue.json` (sha256 `27ff5afb07e8`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
 
 **Status:** normative (Epic 131). **Protocol:** `0.4` — [patterns-protocol-v0.4](/docs/spec/patterns-protocol-v0.4/) defines the schema (§3), the token (§4) and runtime (§5) measurements, the verdict algorithm (§6) and how a verdict is enforced (§7). **Companion:** [idiom-v0.4](/docs/spec/idiom-v0.4/) (the prose rules these verdicts measure), [Lesson 11 — Patterns and Efficiency](/docs/learn/11-patterns-and-efficiency/) (the teaching view of the same data).
 
@@ -30,6 +30,7 @@ Every entry lists all measured candidate forms and the verdict that follows from
 | [`str-num-format`](#str-num-format) | `str` | `c` | — | provisional | — |
 | [`str-repeat-pad`](#str-repeat-pad) | `str` | `a` | `c` | provisional | — |
 | [`str-array-render`](#str-array-render) | `str` | `c` | — | provisional | — |
+| [`str-char-read`](#str-char-read) | `str` | `a` | — | provisional | — |
 | [`err-propagate`](#err-propagate) | `err` | `a` | — | provisional | — |
 | [`err-default`](#err-default) | `err` | `b` | — | provisional | `single-use-let` (hint) |
 | [`err-validate-early`](#err-validate-early) | `err` | `a` | — | provisional | — |
@@ -1186,6 +1187,59 @@ f=pat(n:i64):str{
 **Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
 
 **Measured at.** tkc `toke 3.1.0 (git 3b469371bff9)` @ `3b469371bff9`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `20261114-121134.json`; date 2026-11-14. Timed on a machine under load (`meta.load_warning`) — every verdict here stays `provisional` until story 131.25 re-measures (protocol §8).
+
+### str-char-read
+
+**Intent.** Read the single character at index i of a string to test or classify it.
+
+**Applicability.** Any per-character test of a string: compare the character at i with one character, or classify it by its byte value. s.charcode(t;i) is a plain i64 (0 when i is out of range), so it needs no mt and carries no union; the one-character slice t.slice(i;i+1) is str!$sliceerr since 127.462 and must be read through mt or !. Compare against the byte value (44 is ','). Not for a substring longer than one character, and not for parsing structured text (s.split, s.fields, json.dec: idiom-v0.4#4). Owner answer R2 (2026-11-12) routes corpus records that read one character through a slice to this form.
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **a** | s.charcode(t;i)==44 | 15 | 102 | 24 | 50 | 48 | 102 | 51.54 | 5616 | 128198 / 3109596 | 2.40 | best | best |
+| b | mt t.slice(i;i+1) =="," | 19 | 125 | 30 | 62 | 61 | 125 | 93.39 | 40128 | 128198 / 3109596 | 3.46 | slower | more |
+
+**Verdict.** canonical = `a` (s.charcode(t;i)==44); status = `provisional`.
+
+**Canonical form** (`patterns/str-char-read/a.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(line:str):i64{
+  let c=mut.0;
+  lp(let i=0;i<s.len(line);i=i+1){if(s.charcode(line;i)==44){c=c+1}};
+  <c
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let t=mut.0;
+  lp(let i=0;i<n;i=i+1){t=t+pat("ab,cde,\(i),f,gh")*10+i%7};
+  io.println("t=\(t)");
+  <0
+};
+```
+
+**Form `b`** — mt t.slice(i;i+1) =="," (`patterns/str-char-read/b.tk`, `pat` only):
+
+```toke
+f=pat(line:str):i64{
+  let c=mut.0;
+  lp(let i=0;i<s.len(line);i=i+1){if((mt line.slice(i;i+1){$ok:v v;$err:e ""})==","){c=c+1}};
+  <c
+};
+```
+
+**Sources.**
+
+- `ast-mine:35`
+- `ast-mine:42`
+
+**Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
+
+**Measured at.** tkc `toke 3.2.0 (git 3a8f0ae64a8b)` @ `3a8f0ae64a8b`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `20261124-145551.json`; date 2026-11-24. Timed on a machine under load (`meta.load_warning`) — every verdict here stays `provisional` until story 131.25 re-measures (protocol §8).
 
 ## Family `err` — Errors
 

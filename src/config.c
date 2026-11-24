@@ -163,6 +163,19 @@ static int cap_line(const char *path, int lineno, const char *key, char *val,
         }
         return 0;
     }
+    /* 138.44 (D5): os_enforce = true adds OS-level enforcement behind the
+     * broker.  It declares no grant: like `enforce`, it sets cap_present
+     * only.  true / false; a string is refused rather than read as truthy. */
+    if (!strcmp(key, "os_enforce")) {
+        if (!strcmp(val, "true")) { limits->cap_os = 1; limits->cap_present = 1; }
+        else if (!strcmp(val, "false")) limits->cap_os = 0;
+        else {
+            fprintf(stderr, "tkc: %s:%d: os_enforce wants true or false, got '%s'\n",
+                    path, lineno, val);
+            return -1;
+        }
+        return 0;
+    }
     unsigned bit = 0u;                   /* 0: the enforce key */
     if (strcmp(key, "enforce") != 0) {
         bit = cap_key_bit(key);
@@ -420,6 +433,8 @@ void tkc_emit_cap_globals(FILE *out, const TkcLimits *lim)
     fprintf(out, "@__tk_cap_baked_runtime = constant i32 %d\n",
             !lim->cap_set ? TK_CAP_RUNTIME_LEGACY
                           : lim->cap_runtime_union ? TK_CAP_RUNTIME_UNION : TK_CAP_RUNTIME_NARROW);
+    /* 138.44: only when asked for, so every other binary's IR is unchanged. */
+    if (lim->cap_os) fputs("@__tk_cap_baked_os = constant i32 1\n", out);
     int n = lim->cap_nscopes;
     if (n <= 0) return;
     /* 138.19 D1 / §3.6: the scope table, {class, kind, text}. */

@@ -16,7 +16,7 @@ Measured against the built compiler, not read off the interface. Every row links
 | Published call | `.tki` arity | Glue arity | Behaviour today |
 |---|---|---|---|
 | `infer.load` | 2 | 2 | takes `inferopts` (135.31) and ignores it; takes the `$err` arm, never a handle |
-| `infer.loadstreaming` | 2 | 2 | takes `streamopts` (135.31) and ignores it; takes the `$err` arm |
+| `infer.loadstreaming` | 2 | 2 | takes `streamopts` (135.31) and ignores it; takes the `$err` arm. Incomplete in the core too: it returns no handle in any build (136.78; see `infer.loadstreaming` below) |
 | `infer.unload` | 1 | 1 | returns 0 |
 | `infer.generate` | 3 | 3 | takes the token limit (137.11) and ignores it; takes the `$err` arm (until 127.241 it returned the literal `"[infer: not available]"` through `$ok`) |
 | `infer.embed` | 2 | 2 | takes the `$err` arm (until 127.241 it returned a zero-length array through `$ok`) |
@@ -110,11 +110,23 @@ Runs `text` through the embedding layer. `tk_infer_embed` exists; the wrapper al
 
 #### infer.isloaded(h: modelhandle): bool
 
-Whether `h` refers to a live model.
+Whether `h` refers to a live model. Only `infer.load` can produce one: `infer.loadstreaming` never returns a handle (below), so a false answer here never means "a streaming load is still in progress".
 
 #### infer.loadstreaming(modeldir: str; opts: streamopts): modelhandle!infererr
 
-Streams layers from disk so only the active window is resident, trading latency for the ability to run a model larger than RAM. Not implemented in the core either -- this one is unbuilt at both layers, not merely unwired.
+Streams layers from disk so only the active window is resident, trading latency for the ability to run a model larger than RAM.
+
+**Incomplete: no build returns a handle (136.78).** Not implemented in the core either -- this one is unbuilt at both layers, not merely unwired. The core (`src/stdlib/infer_stream.c`) has the shard scanner, the RAM-bounded prefetch thread and the cleanup, but the layer loop that would load each shard into a llama.cpp model and context is missing. Until 136.78 a llama.cpp build (`TK_HAVE_LLAMACPP`) nevertheless returned **success** with a handle whose model and context were never set: `infer.isloaded` said false for it, and `generate` / `embed` on it could only fail, after a load that had reported success. The core now refuses instead, so there is no not-loaded handle to observe:
+
+| Build | `modeldir` | Result |
+|---|---|---|
+| any | `""` | `$err`, `code` -1 |
+| llama.cpp | a directory with no `layer_NNN.gguf` shard (or one that cannot be opened) | `$err`, `code` -1 |
+| llama.cpp | a directory with shards | `$err`, `code` -2, `msg` "infer.loadstreaming: streaming load is not implemented (the layer loop is missing, story 136.78); use infer.load" |
+| stub core (no llama.cpp) | non-empty | `$err`, `code` -2, `msg` names the missing llama.cpp |
+| this repository's glue (every build today) | any | `$err`, `code` 0 (not linked, above) |
+
+The prefetch machinery is kept in the file behind `TK_INFER_STREAM_LAYER_LOOP`, to be defined together with the loop. Real-model testing of the loop is behind the compute hold. Test: C2220.
 
 ### Notes on the intended design
 

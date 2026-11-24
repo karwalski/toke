@@ -225,7 +225,10 @@ SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=
 export ASAN_OPTIONS="detect_leaks=0:abort_on_error=0:detect_stack_use_after_return=1"
 export UBSAN_OPTIONS="print_stacktrace=1:halt_on_error=1"
 SRCS=("${INFER_DIR}/infer.c" "${INFER_DIR}/infer_stream.c")
-CFL=(-std=c99 -D_GNU_SOURCE -DTK_HAVE_LLAMACPP -Wall -Wno-unused-function -iquote "${INFER_DIR}" -I "${WORK}/fake")
+# 136.78 keeps the prefetch machinery behind TK_INFER_STREAM_LAYER_LOOP until
+# the layer loop exists (a default build returns not-implemented; C2220).
+# This harness tests that machinery, so it compiles it in.
+CFL=(-std=c99 -D_GNU_SOURCE -DTK_HAVE_LLAMACPP -DTK_INFER_STREAM_LAYER_LOOP -Wall -Wno-unused-function -iquote "${INFER_DIR}" -I "${WORK}/fake")
 
 if ! "${CC}" "${CFL[@]}" ${SAN} -o "${WORK}/h" "${WORK}/harness.c" "${SRCS[@]}" -lpthread >"${WORK}/cc.log" 2>&1; then
     echo "FAIL build"; sed -n 1,30p "${WORK}/cc.log"; exit 1
