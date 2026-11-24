@@ -170,8 +170,13 @@ int main(int argc, char **argv) {
     return 0;
 }
 CEOF
-  if cc -std=c99 -D_GNU_SOURCE -I"${S}" -o th th.c "${S}/tk_runtime.c" "${S}/capabilities.c" \
-        "${S}/args.c" "${S}/str.c" -lpthread > cc.log 2>&1; then
+  BASESRCS=(); BASEFLAGS=()
+  while IFS= read -r l; do [ -n "$l" ] && BASESRCS+=("$l"); done \
+      < <("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --tkc "${TKC}")
+  while IFS= read -r l; do [ -n "$l" ] && BASEFLAGS+=($l); done \
+      < <("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --tkc "${TKC}" --flags)
+  if cc -std=c99 -D_GNU_SOURCE -I"${S}" -o th th.c "${BASESRCS[@]}" \
+        ${BASEFLAGS[@]+"${BASEFLAGS[@]}"} -lpthread > cc.log 2>&1; then
     TK_MEM_STATS=1 ./th 2> th.err; rc=$?
     m=$(field th.err malloc_calls); f=$(field th.err free_calls)
     if [ "$rc" = 0 ] && [ -n "$m" ] && [ "$m" -ge 80000 ] && [ "$f" -ge 80000 ]; then
