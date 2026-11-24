@@ -411,14 +411,24 @@ static const char *json_skip_object(const char *p) {
     return p;
 }
 
+/* 127.544: the literals true/false/null were skipped as a fixed p+4 / p+5,
+ * so a document ending inside one (`[t`, `{"a":n`) left p past the string's
+ * terminator and every later read was out of bounds (heap-buffer-overflow
+ * under ASan; a loop over whatever memory followed).  Skip at most n bytes,
+ * never the terminator. */
+static const char *json_skip_lit(const char *p, int n) {
+    while (n-- > 0 && *p) p++;
+    return p;
+}
+
 static const char *json_skip_value(const char *p) {
     p = json_skip_ws(p);
     if (*p == '"') return json_skip_string(p);
     if (*p == '{') return json_skip_object(p);
     if (*p == '[') return json_skip_array(p);
-    if (*p == 't') return p + 4;
-    if (*p == 'f') return p + 5;
-    if (*p == 'n') return p + 4;
+    if (*p == 't') return json_skip_lit(p, 4);
+    if (*p == 'f') return json_skip_lit(p, 5);
+    if (*p == 'n') return json_skip_lit(p, 4);
     if (*p == '-' || (*p >= '0' && *p <= '9')) {
         if (*p == '-') p++;
         while (*p >= '0' && *p <= '9') p++;

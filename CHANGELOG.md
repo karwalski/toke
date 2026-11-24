@@ -208,6 +208,15 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   converts as far as it is well formed. Test: C2285; the inputs are kept as
   `test/fuzz/corpus-adversarial/yaml_flow_seq_no_progress_127542.json` and
   `yaml_deep_seq_past_cap_127542.json`, which `make fuzz-smoke` replays.
+- **`yaml.fromjson` no longer reads past the end of a document that stops
+  inside `true`, `false` or `null`** (127.544, a heap over-read found auditing
+  the converter for 127.542). The literals were skipped as a fixed 4 or 5
+  bytes, so `[t`, `{"a":n` or `[1,f` left the cursor past the string's
+  terminator and every later read was out of bounds (heap-buffer-overflow
+  under ASan; without it the converter walked whatever memory followed). A
+  literal is now skipped over at most its length and never past the end; a
+  complete literal converts as before. Test: C2286; the input is kept as
+  `test/fuzz/corpus-adversarial/yaml_truncated_literal_127544.json`.
 - **`tkc` no longer reads freed memory when it warns that `pkg.lock` is stale**
   (127.449). A build or `--check` of a program with a `pkg.*` import whose
   `pkg.lock` no longer matches `pkg.toml` formatted W9010's dependency name from
