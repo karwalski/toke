@@ -986,9 +986,20 @@ Table of Contents
 
    An arena block creates a lexically scoped allocation region.  All
    heap allocations made within the block are freed when the block
-   exits, regardless of exit path.  Returning a value that references
-   an arena-local allocation across the arena boundary is a compile
-   error (E5001).
+   exits, regardless of exit path.
+
+   Inside an arena block, at any depth, assigning a value of a heap
+   type (str, an array, a map, a struct or sum, a closure, or an error
+   union whose value is one of these) to a module-level mut binding is
+   a compile error (E5001).  Assigning a scalar is not an escape.  No
+   other store, return or capture is E5001.
+
+   Note (2026-11-24, story 127.531): the E5001 rule above is the one
+   the reference compiler ships (memory-model.md Section 2.4, story
+   127.526).  As shipped, an arena block releases no memory
+   (memory-model.md Section 1.2); what it will release, and which
+   other escapes are rejected or copied out, is proposed in ADR-0016
+   (docs/decisions/ADR-0016-arena-block.md, status Proposed).
 
 ### 7.10.  Complete Example
 
@@ -1056,9 +1067,14 @@ Table of Contents
        of that function call.
    2.  Allocations within an arena block are valid for the lifetime
        of that block.
-   3.  A value allocated in inner scope A MUST NOT be returned from,
-       passed out of, or stored in a location with a lifetime longer
-       than A (compile error E5001).
+   3.  Inside an {arena ...} block, a value of a heap type MUST NOT be
+       assigned to a module-level mut binding (compile error E5001).
+       This is the escape rule the reference compiler ships
+       (memory-model.md Section 2.4, story 127.526); a scalar may be
+       assigned, and no other return, store or capture is E5001.  The
+       wider escape rules for arena blocks (returns copied out, stores
+       and retaining calls rejected) are proposed in ADR-0016
+       (status Proposed) and are not part of this rule (story 127.531).
    4.  Module-level constants and static data are allocated at program
        start and freed at program exit.
 

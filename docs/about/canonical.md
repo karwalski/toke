@@ -69,7 +69,7 @@ dropped it on 2026-11-15, and it must not be re-copied.*
 | Keywords | **14**: `m i t f let if el lp br rt as mt sc mut` | `toke-spec-v0.4.md` §A |
 | Character set | **59** — 26 lowercase letters, 10 digits, 23 symbols; no uppercase, no underscores | `src/lexer.c` (ground truth); `docs/metrics-baseline.md` § Project facts |
 | Grammar | **backtrack-free with bounded lookahead of up to 3 tokens** on a small, enumerated set of productions (E1–E5) | `toke-spec-v0.4.md` §E; `docs/spec/grammar.ebnf` Appendix A |
-| Canonical form | one canonical form per construct, chosen by measurement in a **46-entry** pattern catalogue and reproduced by `tkc --min` | `docs/spec/idiom-v0.4.md`; `docs/spec/patterns-protocol-v0.4.md`; `patterns/catalogue.json` |
+| Canonical form | one canonical form per construct, chosen by measurement in a **47-entry** pattern catalogue and reproduced by `tkc --min` | `docs/spec/idiom-v0.4.md`; `docs/spec/patterns-protocol-v0.4.md`; `patterns/catalogue.json` |
 | Machine-readable grammar | `docs/spec/grammar.ebnf`, `docs/spec/toke.gbnf` | `toke-spec-v0.4.md` |
 
 **Three corrections that this file exists to hold in place (stories 132.12, 132.14).**
@@ -180,14 +180,17 @@ compares each copy against `canonical.json`.
 
 > toke is a compiled programming language designed for LLM code generation. It has 14
 > keywords, a 59-character set, a backtrack-free grammar with bounded lookahead, and one
-> canonical form per construct, chosen by measurement in a 46-pattern catalogue and
+> canonical form per construct, chosen by measurement in a 47-pattern catalogue and
 > reproduced by `tkc --min`. That makes generated code cheap to constrain during decoding
 > and cheap for a compiler to verify afterwards. Token efficiency is one measured property
 > of toke, always reported with its tokenizer and its baseline, not the whole claim.
 
 *Verbatim from `docs/about/positioning-2026-09.md` §9, v2 (story 132.7; copied here by story
 132.154). v1's 82-word paragraph ended its third sentence "and compact to emit"; the owner
-dropped that on 2026-11-15.*
+dropped that on 2026-11-15. Story 131.145 (2026-11-24) changed "46-pattern" to "47-pattern"
+when str-char-read became the catalogue's 47th entry; the count is derived as
+`patterns_catalogue_entries` in `docs/metrics-baseline.md` § Project facts and gated by rule 4
+of `scripts/check_metrics_claims.py`.*
 
 ### Token efficiency, short form
 

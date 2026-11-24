@@ -2,7 +2,7 @@
 
 toke is a compiled programming language designed for LLM code generation. It has 14
 keywords, a 59-character set, a backtrack-free grammar with bounded lookahead, and one
-canonical form per construct, chosen by measurement in a 46-pattern catalogue and
+canonical form per construct, chosen by measurement in a 47-pattern catalogue and
 reproduced by `tkc --min`. That makes generated code cheap to constrain during decoding
 and cheap for a compiler to verify afterwards. Token efficiency is one measured property
 of toke, always reported with its tokenizer and its baseline, not the whole claim.
@@ -32,8 +32,8 @@ about a tokenizer.
    keeps that automaton small and its masks cheap. Machine-readable artefacts ship with
    the compiler: [`docs/spec/grammar.ebnf`](docs/spec/grammar.ebnf) and
    [`docs/spec/toke.gbnf`](docs/spec/toke.gbnf).
-3. **Canonical.** One measured form per construct. `patterns/catalogue.json` holds 46
-   entries across 10 families; a form becomes canonical only by being best-or-tied on
+3. **Canonical.** One measured form per construct. `patterns/catalogue.json` holds <!--fact:patterns_catalogue_entries-->47<!--/fact-->
+   entries across <!--fact:patterns_catalogue_families-->10<!--/fact--> families; a form becomes canonical only by being best-or-tied on
    tokens *and* runtime, and all candidate forms of a pattern must print byte-identical
    output. `tkc --min` reproduces the canonical text, which makes comparison exact rather
    than fuzzy.
