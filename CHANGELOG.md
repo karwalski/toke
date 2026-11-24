@@ -536,6 +536,10 @@ Tests: D730–D734, C2101 (a differential of each fix over every sign combinatio
   to parse. `toke.gbnf` and `toke.lark` (`item ::= ... | arena (ws ";")?`) and a
   `grammar.ebnf` note follow; no production, keyword or lookahead is added.
   Tests: D774, `make check-gbnf` (`test/gbnf/extra/x38.tk` now accepted by both).
+- **E5001's documentation describes the check the compiler makes** (127.528):
+  `docs/spec/errors.md`, `docs/reference/errors.md`, `docs/reference/statements.md`,
+  `docs/spec/semantics.md` §7.3, `docs/spec/memory-model.md` §2.4 and the guide, with
+  an example that parses and draws exactly E5001.
 - **E4026 (wrong argument count) has no `fix` field** (138.51, AGENTS.md §6). The
   four texts it carried were advice, not a repair right in every case: which side
   is wrong (the call, or an interface that disagrees with its implementation) and

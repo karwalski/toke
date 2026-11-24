@@ -1404,12 +1404,12 @@ f=main():i64{let m=mt $s{a:1;b:2} {$a:n n+10;$b:n n+20};<m};
 | Severity | error       |
 | Stage    | arena_check |
 
-Reserved for a value that escapes an `{arena ...}` block: an assignment, inside the block, to a name declared at module scope. `{arena}` releases nothing today ([memory model](/docs/spec/memory-model/) §1.2, amended by 127.524), so no escape leaves a dangling reference; the full rule belongs to the `{arena}` ADR (127.525). The checker does not emit E5001 yet: it never reaches the block's statements (127.526). The intended trigger:
+A value escapes an `{arena ...}` block: inside the block, at any depth, a value of a heap type (`str`, array, map, struct or sum, closure, or an error union whose value is one of these) is assigned to a module-level `mut` binding ([memory model](/docs/spec/memory-model/) §2.4). A scalar assigned to a module-level `mut`, and any store to a binding of the enclosing function, is not E5001. `{arena}` releases nothing today (§1.2), so no escape leaves a dangling reference; the full rule belongs to the `{arena}` ADR (127.525). There is no `fix`: bind the value inside the block, or move the store out of it.
 <!-- skip-check -->
 ```text
 m=test;
-let g=mut.0;
-f=bad(): i64 { {arena g = 1} < g };
+let g=mut."";
+f=keep(n:i64):i64{{arena g="n=\(n)"};<0};
 ```
 ### E5002
 

@@ -696,9 +696,12 @@ releases no memory: values made in it live under `memory-model.md` §1.3
 (amended 2026-11-24, story 127.524), and its release semantics are the
 subject of the `{arena}` ADR (story 127.525).
 
-**Escape analysis:** inside an `{arena}` block, an assignment to a name
-declared at module scope is a compile error `[errors.md E5001]`
-(`memory-model.md` §2.4). The checker does not emit it yet (127.526).
+**Escape analysis:** inside an `{arena}` block, at any depth, assigning a
+value of a heap type (`str`, array, map, struct or sum, closure, or an error
+union whose value is one of these) to a module-level `mut` binding is a
+compile error `[errors.md E5001]` (`memory-model.md` §2.4). A scalar is never
+allocated, so assigning one is not an escape; a store to a binding of the
+enclosing function is not checked (story 127.526).
 
 The arena depth is tracked during type checking. The lifetime rules are in
 `memory-model.md` §1 and §2.

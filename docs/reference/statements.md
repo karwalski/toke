@@ -268,4 +268,6 @@ f=demo():i64{
 };
 ```
 
-**Constraint:** An assignment, inside an arena block, to a name declared at module scope is reserved as error [E5001](/docs/reference/errors/#e5001) (memory model §2.4); the checker does not emit it yet (story 127.526). Values made inside the block may be used freely within it and may be written to the function's own outer mutable bindings, as in the example.
+Like an `if` or `lp` block, an arena block may be followed by one `;` (story 127.527).
+
+**Constraint:** Inside an arena block, at any depth, assigning a value of a heap type (`str`, array, map, struct or sum, closure) to a module-level `mut` binding is error [E5001](/docs/reference/errors/#e5001) (memory model §2.4). A scalar may be assigned to one. Values made inside the block may be used freely within it and may be written to the function's own outer mutable bindings, as in the example.
