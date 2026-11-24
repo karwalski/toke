@@ -348,6 +348,22 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   `toke-lexeme.lark` and 225 of 320 in `toke-xgr.gbnf` are killed by
   `test/gbnf/fragments.json`; adding fragments is 131.150. Details: limit 4 in
   `docs/about/reviews/mask-cost-2026-11-24.md`.
+- **The toke grammar fragment set exercises every alternative of the tuned forms**
+  (131.150). `test/gbnf/fragments.json` had fallen behind its seeds and is regenerated
+  (2081 -> 2473 fragments: 99 newer diagnostics inputs and changed standalone and
+  example programs). 17 hand-written seeds, `test/gbnf/extra/x78.tk`-`x94.tk`, add
+  68 fragments (2541 in all). They cover comments and string interpolation nested
+  to the 8 levels the llguidance form unrolls, every string escape, one name per
+  branch of the keyword-excluding identifier trie (as a const, a let name and a
+  value), `fn` as a name, all 14 scalars, every type and parameter-type form, every
+  operator, every unary and cast form after `!`, after `rt` with no space and as a
+  `mt` subject, postfix chains, and a comment wherever whitespace is required.
+  `scripts/grammar_mutation.py --toke`: before (2081 fragments) 260 of 502 deletions
+  killed in `toke-lexeme.lark` and 225 of 320 in `toke-xgr.gbnf`; the 68 new
+  fragments alone kill 502 of 502 and 320 of 320, so no survivor needs an
+  equivalence argument. `make check-gbnf` and `make check-grammar-artefacts` agree
+  on 2541 of 2541. No grammar changed. Writing the fragments found that `toke.gbnf`
+  rejects reading a field named `fn` (`x.fn`), which `tkc` parses (filed 131.152).
 
 - **`make fuzz-smoke` replays its inputs under libFuzzer** (127.480). It passed
   libFuzzer a seed directory plus adversarial files, a mix libFuzzer refuses
