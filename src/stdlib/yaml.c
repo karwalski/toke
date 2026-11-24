@@ -449,11 +449,13 @@ static const char *json_skip_value(const char *p) {
  * is none of { [ " and no literal json_skip_value knows (the fuzz input
  * `{"b":[1,2@]}`: '@'), and any element past the YAML_MAX_INDENT depth cap,
  * comes back with *pp unmoved; the sequence loop then saw the same byte, not
- * ']', and appended "\n- " forever (libFuzzer OOM at 2 GiB).  Each loop now
- * stops when an element made no progress and *stop unwinds every enclosing
- * frame, so no parent goes on to parse the bytes a child left behind.  The
- * work is linear in the input and the output is bounded by it (at most
- * YAML_MAX_INDENT + a few bytes per input byte).  An empty element on a comma
+ * ']', and appended "\n- " forever (libFuzzer OOM at 2 GiB).  The sequence
+ * loop now stops when an element made no progress and *stop unwinds every
+ * enclosing frame, so no parent goes on to parse the bytes a child left
+ * behind.  The object loop needs no such guard: each of its iterations
+ * consumes a key's '"' or breaks.  The work is linear in the input and the
+ * output is bounded by it (at most YAML_MAX_INDENT + a few bytes per input
+ * byte).  An empty element on a comma
  * (`[1,,2]`, `{"a":,"b":1}`) consumes the comma and converts as before. */
 static void json_to_yaml_r(const char **pp, TkStrBuf *ob, int indent,
                            int *stop) {
@@ -481,10 +483,12 @@ static void json_to_yaml_r(const char **pp, TkStrBuf *ob, int indent,
             if (*p == ':') p++;
             p = json_skip_ws(p);
             /* Value */
-            const char *before = p;
             json_to_yaml_r(&p, ob, indent + 2, stop);
-            /* 127.542: no progress (except on a comma) -- stop everything */
-            if (*stop || (p == before && *p != ',')) { *stop = 1; break; }
+            /* Only a stop from below ends this loop: it cannot spin, because
+             * every iteration consumes a key's '"' or breaks at the key check
+             * above, so a value that consumes nothing (`{"a":}`) still
+             * converts as before. */
+            if (*stop) break;
             p = json_skip_ws(p);
             if (*p == ',') p++;
         }

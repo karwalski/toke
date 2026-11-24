@@ -14,10 +14,11 @@
 # appended "\n- " forever.  Any program calling yaml.fromjson on untrusted
 # text could be held at 100% CPU with unbounded memory by a few bytes.
 #
-# THE FIX: each loop in json_to_yaml_r stops when an element made no progress
-# (an empty element on a comma still consumes the comma, as before) and the
-# stop unwinds every enclosing frame, so no parent re-parses the bytes a child
-# left behind.  Every iteration consumes input: work is linear in the input
+# THE FIX: the sequence loop in json_to_yaml_r stops when an element made no
+# progress (an empty element on a comma still consumes the comma, as before)
+# and the stop unwinds every enclosing frame, so no parent re-parses the bytes
+# a child left behind.  The object loop never spun (each iteration consumes a
+# key's '"' or breaks), so it only honours a stop from below.  Every iteration consumes input: work is linear in the input
 # and the output at most a few hundred bytes per input byte.  What converted
 # before converts to exactly the same text.
 #
@@ -28,7 +29,9 @@
 #      each returns, with the expected output length, in < 5 s wall.
 #   2. controls that must convert exactly as before (text taken from base
 #      eca5062f): `{"a":1,"b":[1,2]}`, `[1,[2,3],{"k":"v"}]`, `{}`, `[]`, and
-#      the elided elements `[1,,2]`, `{"a":,"b":1}`, `[[1,,2],3]`.
+#      the elided elements `[1,,2]`, `{"a":,"b":1}`, `[[1,,2],3]`, and
+#      empty values on a closer, `[{"a":},1]`, `{"x":{"a":},"y":1}`,
+#      `[{"a": }, {"b":3}]`, `[[{"a":],2]` (text taken from v3.2.0).
 #
 # Negative control: C2285_STDLIB=<dir> builds against another tree's
 # src/stdlib (its ../../stdlib must hold the .tki files).  The v3.2.0 tree
@@ -127,6 +130,14 @@ f=main():i64{
   io.println(yaml.fromjson("{\"a\":,\"b\":1}"));
   io.println("--");
   io.println(yaml.fromjson("[[1,,2],3]"));
+  io.println("--");
+  io.println(yaml.fromjson("[{\"a\":},1]"));
+  io.println("--");
+  io.println(yaml.fromjson("{\"x\":{\"a\":},\"y\":1}"));
+  io.println("--");
+  io.println(yaml.fromjson("[{\"a\": }, {\"b\":3}]"));
+  io.println("--");
+  io.println(yaml.fromjson("[[{\"a\":],2]"));
   <0
 };
 TOKE
@@ -156,14 +167,32 @@ b: 1
   - 1
   -
   - 2
-- 3'
+- 3
+--
+-
+  a:
+- 1
+--
+x:
+  a:
+y: 1
+--
+-
+  a:
+-
+  b: 3
+--
+-
+  -
+    a:
+- 2'
 if ! "${TKC}" --out c c.tk > c.log 2>&1; then
     fail "controls: compile"; head -8 c.log | sed 's/^/        /'
 else
     # (trailing blanks stripped: "b: " and "- " end in a space)
     got="$(perl -e 'alarm 20; exec @ARGV' ./c 2>&1 | sed 's/ *$//')"
     if [ "${got}" = "${WANT}" ]; then
-        pass "controls: well-formed objects, nested sequences, {}, [] and elided elements convert unchanged"
+        pass "controls: well-formed objects, nested sequences, {}, [], elided elements and empty values on a closer convert unchanged"
     else
         fail "controls: output differs"; printf '%s\n' "${got}" | sed 's/^/        /'
     fi
