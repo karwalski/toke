@@ -379,7 +379,8 @@ typedef struct TkStreamState {
 static pthread_mutex_t  g_registry_lock = PTHREAD_MUTEX_INITIALIZER;
 static TkStreamState   *g_registry_head = NULL;
 
-static void registry_insert(TkStreamState *s)
+/* 136.78: unused until TK_INFER_STREAM_LAYER_LOOP (tk_infer_load_streaming). */
+__attribute__((unused)) static void registry_insert(TkStreamState *s)
 {
     pthread_mutex_lock(&g_registry_lock);
     s->next = g_registry_head;
@@ -510,6 +511,7 @@ static void record_throughput(TkStreamState *s, double tok_per_sec)
  *     read shard into slot buffer
  *     mark slot ready, signal main thread
  */
+__attribute__((unused)) /* 136.78: see registry_insert */
 static void *prefetch_thread_fn(void *arg)
 {
     TkStreamState *s = (TkStreamState *)arg;
@@ -660,6 +662,22 @@ TkModelHandleResult tk_infer_load_streaming(const char  *model_dir,
     }
     s->n_shards = n;
 
+#ifndef TK_INFER_STREAM_LAYER_LOOP
+    /* 136.78: the layer loop below is a TODO, so a handle built here was
+     * never loaded (model and ctx stay NULL): tk_infer_is_loaded said 0,
+     * and generate/embed on it could only fail, after a successful load
+     * had told the caller otherwise.  Until the loop exists, refuse with
+     * the "not implemented" code (-2, infer.h) after the checks that can
+     * already be made, and build no handle and no prefetch thread.  The
+     * machinery stays below, compiled once TK_INFER_STREAM_LAYER_LOOP is
+     * defined together with the loop itself. */
+    free(s);
+    result.is_err   = 1;
+    result.err.msg  = "infer.loadstreaming: streaming load is not implemented "
+                      "(the layer loop is missing, story 136.78); use infer.load";
+    result.err.code = -2;
+    return result;
+#else
     /* Allocate prefetch ring. */
     s->slots = (TkPrefetchSlot *)calloc((size_t)s->slot_count,
                                          sizeof(TkPrefetchSlot));
@@ -726,6 +744,7 @@ TkModelHandleResult tk_infer_load_streaming(const char  *model_dir,
 
     result.handle = h;
     return result;
+#endif /* TK_INFER_STREAM_LAYER_LOOP */
 }
 
 /* =========================================================================
