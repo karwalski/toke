@@ -346,7 +346,77 @@ TK_OS_FN void tk_ll_describe(const TkOsPlan *p, int abi, TkOsBuf *b) {
             tk_os_put(b, t);
         }
     }
-    if (p->net_none) tk_os_put(b, "seccomp socket AF_INET AF_INET6 io_uring_setup: EACCES\n");
+    if (p->net_none) tk_os_put(b, "seccomp socket AF_INET AF_INET6 io_uring_setup x32 compat-socketcall: EACCES; other arch: kill\n");
+}
+
+/* ── Linux: the seccomp socket filter (platform-neutral, so testable) ─ */
+
+/* One classic-BPF instruction: the layout of struct sock_filter. */
+typedef struct { uint16_t code; uint8_t jt, jf; uint32_t k; } TkBpf;
+#define TK_BPF_LD_W_ABS 0x20u          /* BPF_LD | BPF_W | BPF_ABS */
+#define TK_BPF_JEQ_K    0x15u          /* BPF_JMP | BPF_JEQ | BPF_K */
+#define TK_BPF_JGE_K    0x35u          /* BPF_JMP | BPF_JGE | BPF_K */
+#define TK_BPF_RET_K    0x06u          /* BPF_RET | BPF_K */
+#define TK_SC_RET_KILL_PROCESS 0x80000000u
+#define TK_SC_RET_ERRNO        0x00050000u
+#define TK_SC_RET_ALLOW        0x7fff0000u
+#define TK_SC_NONE             0xFFFFFFFFu   /* a number no system call has */
+/* struct seccomp_data: int nr; __u32 arch; __u64 instruction_pointer; __u64 args[6]. */
+#define TK_SC_OFF_NR   0u
+#define TK_SC_OFF_ARCH 4u
+#define TK_SC_OFF_ARG0 16u
+#define TK_SC_FILTER_LEN 19
+#define TK_OS_AF_INET6 10u   /* Linux's AF_INET6 (the filter is Linux's; macOS's is 30) */
+
+/* What the filter needs to know about one architecture. */
+typedef struct {
+    uint32_t arch;            /* AUDIT_ARCH_* of native system calls */
+    uint32_t compat_arch;     /* AUDIT_ARCH_* of the 32-bit compat entry */
+    uint32_t nr_socket, nr_io_uring, x32_bit;   /* native; x32_bit 0: none */
+    uint32_t c_socket, c_socketcall, c_io_uring; /* compat; TK_SC_NONE: none */
+    uint32_t arg0;            /* offset of args[0]'s low word */
+} TkScArch;
+
+/* x86_64: the i386 entry (int 0x80) has its own numbers, and socketcall,
+ * whose domain sits in user memory the filter cannot read. */
+static const TkScArch __attribute__((unused)) tk_sc_x86_64 = {
+    0xC000003Eu, 0x40000003u, 41u, 425u, 0x40000000u, 359u, 102u, 425u, TK_SC_OFF_ARG0
+};
+/* aarch64: the AArch32 compat entry (EABI: no socketcall). */
+static const TkScArch __attribute__((unused)) tk_sc_aarch64 = {
+    0xC00000B7u, 0x40000028u, 198u, 425u, 0u, 281u, TK_SC_NONE, 425u, TK_SC_OFF_ARG0
+};
+
+/* The net class is not granted at all: refuse IPv4 / IPv6 sockets of every
+ * kind (Landlock covers TCP only), io_uring (which opens sockets without
+ * the socket call), x32 calls, and on the compat entry also socketcall
+ * (every socket operation; its domain cannot be read).  A system call of
+ * any other architecture kills the process: it cannot be checked. */
+TK_OS_FN int tk_sc_no_net_filter(const TkScArch *a, TkBpf f[TK_SC_FILTER_LEN]) {
+    const uint32_t deny = TK_SC_RET_ERRNO | (uint32_t)(EACCES & 0xFFFF);
+#define TK_I(i, c, t, e, kk) (f[i].code = (uint16_t)(c), f[i].jt = (t), f[i].jf = (e), f[i].k = (kk))
+    TK_I(0,  TK_BPF_LD_W_ABS, 0, 0, TK_SC_OFF_ARCH);
+    TK_I(1,  TK_BPF_JEQ_K, 0, 5, a->arch);                       /* -> 2, else compat 7 */
+    TK_I(2,  TK_BPF_LD_W_ABS, 0, 0, TK_SC_OFF_NR);
+    if (a->x32_bit) TK_I(3, TK_BPF_JGE_K, 13, 0, a->x32_bit);   /* -> deny 17 */
+    else            TK_I(3, TK_BPF_JEQ_K, 13, 0, TK_SC_NONE);
+    TK_I(4,  TK_BPF_JEQ_K, 12, 0, a->nr_io_uring);               /* -> deny 17 */
+    TK_I(5,  TK_BPF_JEQ_K, 7, 0, a->nr_socket);                  /* -> domain 13 */
+    TK_I(6,  TK_BPF_RET_K, 0, 0, TK_SC_RET_ALLOW);
+    TK_I(7,  TK_BPF_JEQ_K, 0, 10, a->compat_arch);               /* -> 8, else kill 18 */
+    TK_I(8,  TK_BPF_LD_W_ABS, 0, 0, TK_SC_OFF_NR);
+    TK_I(9,  TK_BPF_JEQ_K, 7, 0, a->c_socketcall);               /* -> deny 17 */
+    TK_I(10, TK_BPF_JEQ_K, 6, 0, a->c_io_uring);                 /* -> deny 17 */
+    TK_I(11, TK_BPF_JEQ_K, 1, 0, a->c_socket);                   /* -> domain 13 */
+    TK_I(12, TK_BPF_RET_K, 0, 0, TK_SC_RET_ALLOW);
+    TK_I(13, TK_BPF_LD_W_ABS, 0, 0, a->arg0);                    /* the domain */
+    TK_I(14, TK_BPF_JEQ_K, 2, 0, 2u);                            /* AF_INET -> deny 17 */
+    TK_I(15, TK_BPF_JEQ_K, 1, 0, TK_OS_AF_INET6);                /* AF_INET6 -> deny 17 */
+    TK_I(16, TK_BPF_RET_K, 0, 0, TK_SC_RET_ALLOW);
+    TK_I(17, TK_BPF_RET_K, 0, 0, deny);
+    TK_I(18, TK_BPF_RET_K, 0, 0, TK_SC_RET_KILL_PROCESS);
+#undef TK_I
+    return TK_SC_FILTER_LEN;
 }
 
 /* ── Apply ──────────────────────────────────────────────────────────── */
@@ -416,7 +486,8 @@ struct tk_ll_net_port     { uint64_t allowed_access; uint64_t port; };
 #define TK_LL_RULE_NET_PORT     2
 #define TK_LL_CREATE_RULESET_VERSION 1u
 
-/* Add one path rule; 0 when the path does not exist (nothing to admit). */
+/* Add one path rule: 1 added (or nothing to add), 0 the path does not
+ * exist (nothing to admit), -1 landlock_add_rule refused it. */
 TK_OS_FN int tk_ll_add_path(int rs, const char *path, uint64_t rights) {
     int fd = open(path, O_PATH | O_CLOEXEC);
     if (fd < 0) return 0;
@@ -428,29 +499,67 @@ TK_OS_FN int tk_ll_add_path(int rs, const char *path, uint64_t rights) {
     int ok = rights == 0 ||
              syscall(SYS_landlock_add_rule, rs, TK_LL_RULE_PATH_BENEATH, &pb, 0) == 0;
     close(fd);
-    return ok;
+    return ok ? 1 : -1;
 }
 
 /* A write scope that does not exist yet (a cache directory the program
  * creates): Landlock needs an existing directory, so the rule goes on the
- * nearest existing ancestor, which the CAP004 line names. */
-TK_OS_FN void tk_ll_add_write_scope(int rs, const char *path, uint64_t rights, TkOsWarn warn) {
-    if (tk_ll_add_path(rs, path, rights)) return;
+ * nearest existing ancestor, which the CAP004 line names.  -1 as above. */
+TK_OS_FN int tk_ll_add_write_scope(int rs, const char *path, uint64_t rights, TkOsWarn warn) {
+    int r = tk_ll_add_path(rs, path, rights);
+    if (r != 0) return r;
     char dir[4096];
     snprintf(dir, sizeof dir, "%s", path);
     for (;;) {
         char *slash = strrchr(dir, '/');
-        if (!slash) return;
+        if (!slash) return 1;
         if (slash == dir) slash[1] = '\0'; else *slash = '\0';
-        if (tk_ll_add_path(rs, dir, rights)) {
+        r = tk_ll_add_path(rs, dir, rights);
+        if (r < 0) return r;
+        if (r > 0) {
             char why[4096 + 200];
             snprintf(why, sizeof why, "the fs.write scope %s does not exist yet; Landlock "
                      "admits writes beneath %s, its nearest existing directory", path, dir);
             warn("landlock", why);
-            return;
+            return 1;
         }
-        if (!strcmp(dir, "/")) return;
+        if (!strcmp(dir, "/")) return 1;
     }
+}
+
+/* A rule the kernel refused would leave the ruleset narrower than the
+ * grant: apply none of it (the broker still enforces every grant). */
+TK_OS_FN void tk_ll_refused(int rs, const char *what, TkOsWarn warn) {
+    char why[4096 + 200];
+    snprintf(why, sizeof why, "landlock_add_rule refused the rule for %s: %s; no Landlock "
+             "rules were applied, so file-system, execute and TCP scopes are enforced by the "
+             "broker only", what, strerror(errno));
+    warn("landlock", why);
+    close(rs);
+}
+
+/* The path rules: 0, or -1 after tk_ll_refused (rs closed). */
+TK_OS_FN int tk_ll_add_paths(int rs, const TkOsPlan *p, int abi, TkOsWarn warn) {
+    struct { int on; const char *const *base; const TkOsPaths *s; uint64_t rights; int write; } k[3] = {
+        { p->read.on,  tk_os_linux_read_base,  &p->read,  tk_ll_read_rights(),   0 },
+        { p->write.on, tk_os_linux_write_base, &p->write, tk_ll_write_rights(abi), 1 },
+        { p->exec.on,  tk_os_linux_exec_base,  &p->exec,  TK_LL_EXECUTE,        0 },
+    };
+    for (int j = 0; j < 3; j++) {
+        if (!k[j].on) continue;
+        for (int i = 0; k[j].base[i]; i++)
+            if (tk_ll_add_path(rs, k[j].base[i], k[j].rights) < 0) {
+                tk_ll_refused(rs, k[j].base[i], warn);
+                return -1;
+            }
+        for (int i = 0; i < k[j].s->n; i++) {
+            const char *v = k[j].s->v[i];
+            int r = k[j].write ? tk_ll_add_write_scope(rs, v, k[j].rights, warn)
+                               : tk_ll_add_path(rs, v, k[j].rights);
+            if (r < 0) { tk_ll_refused(rs, v, warn); return -1; }
+        }
+    }
+    return 0;
 }
 
 TK_OS_FN void tk_ll_apply(const TkOsPlan *p, TkOsWarn warn) {
@@ -484,25 +593,7 @@ TK_OS_FN void tk_ll_apply(const TkOsPlan *p, TkOsWarn warn) {
         warn("landlock", why);
         return;
     }
-    if (p->read.on) {
-        for (int i = 0; tk_os_linux_read_base[i]; i++)
-            (void)tk_ll_add_path(rs, tk_os_linux_read_base[i], tk_ll_read_rights());
-        for (int i = 0; i < p->read.n; i++)
-            (void)tk_ll_add_path(rs, p->read.v[i], tk_ll_read_rights());
-    }
-    if (p->write.on) {
-        uint64_t w = tk_ll_write_rights((int)abi);
-        for (int i = 0; tk_os_linux_write_base[i]; i++)
-            (void)tk_ll_add_path(rs, tk_os_linux_write_base[i], w);
-        for (int i = 0; i < p->write.n; i++)
-            tk_ll_add_write_scope(rs, p->write.v[i], w, warn);
-    }
-    if (p->exec.on) {
-        for (int i = 0; tk_os_linux_exec_base[i]; i++)
-            (void)tk_ll_add_path(rs, tk_os_linux_exec_base[i], TK_LL_EXECUTE);
-        for (int i = 0; i < p->exec.n; i++)
-            (void)tk_ll_add_path(rs, p->exec.v[i], TK_LL_EXECUTE);
-    }
+    if (tk_ll_add_paths(rs, p, (int)abi, warn) < 0) return;
     const TkOsPorts *ns[2] = { &p->bind, &p->connect };
     uint64_t nb[2] = { TK_LL_NET_BIND, TK_LL_NET_CONNECT };
     for (int j = 0; j < 2; j++) {
@@ -511,7 +602,12 @@ TK_OS_FN void tk_ll_apply(const TkOsPlan *p, TkOsWarn warn) {
             struct tk_ll_net_port np;
             np.allowed_access = nb[j];
             np.port = (uint64_t)ns[j]->v[i].port;
-            (void)syscall(SYS_landlock_add_rule, rs, TK_LL_RULE_NET_PORT, &np, 0);
+            if (syscall(SYS_landlock_add_rule, rs, TK_LL_RULE_NET_PORT, &np, 0) != 0) {
+                char what[64];
+                snprintf(what, sizeof what, "%s port %ld", j ? "connect" : "bind", ns[j]->v[i].port);
+                tk_ll_refused(rs, what, warn);
+                return;
+            }
         }
     }
     if (syscall(SYS_landlock_restrict_self, rs, 0) != 0) {
@@ -522,46 +618,36 @@ TK_OS_FN void tk_ll_apply(const TkOsPlan *p, TkOsWarn warn) {
     close(rs);
 }
 
-/* The architecture the filter is written for; anything else is let through
- * by the filter's first test and CAP004 says the filter is absent. */
+/* The seccomp filter's architecture (tk_sc_no_net_filter). */
 #if defined(__x86_64__)
-#define TK_SC_ARCH 0xC000003Eu   /* AUDIT_ARCH_X86_64 */
+#define TK_SC_ARCH (&tk_sc_x86_64)
+#define TK_SC_NR_SOCKET 41
 #elif defined(__aarch64__)
-#define TK_SC_ARCH 0xC00000B7u   /* AUDIT_ARCH_AARCH64 */
+#define TK_SC_ARCH (&tk_sc_aarch64)
+#define TK_SC_NR_SOCKET 198
 #endif
 
-/* The net class is not granted at all: refuse IPv4 / IPv6 sockets of every
- * kind (Landlock covers TCP only) and io_uring (which can open sockets
- * without the socket syscall). */
 TK_OS_FN void tk_sc_apply_no_net(TkOsWarn warn) {
 #ifdef TK_SC_ARCH
+    /* The neutral filter hard-codes these; a libc that disagrees fails the build. */
+    typedef char tk_sc_check_layout[(offsetof(struct seccomp_data, nr) == TK_SC_OFF_NR &&
+        offsetof(struct seccomp_data, arch) == TK_SC_OFF_ARCH &&
+        offsetof(struct seccomp_data, args) == TK_SC_OFF_ARG0 &&
+        sizeof(struct sock_filter) == sizeof(TkBpf) && AF_INET == 2 &&
+        AF_INET6 == TK_OS_AF_INET6 && __NR_socket == TK_SC_NR_SOCKET) ? 1 : -1]
+        __attribute__((unused));
+    TkScArch a = *TK_SC_ARCH;
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-#define TK_SC_ARG0 (offsetof(struct seccomp_data, args[0]) + 4)
-#else
-#define TK_SC_ARG0 offsetof(struct seccomp_data, args[0])
+    a.arg0 += 4;
 #endif
-    struct sock_filter f[] = {
-        /* 0 */ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, arch)),
-        /* 1 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, TK_SC_ARCH, 1, 0),
-        /* 2 */ BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        /* 3 */ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
-#if defined(__x86_64__)
-        /* x32 system calls (bit 30) are refused outright */
-        /* 4 */ BPF_JUMP(BPF_JMP | BPF_JGE | BPF_K, 0x40000000u, 7, 0),
-#else
-        /* 4 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0xFFFFFFFFu, 7, 0),
-#endif
-        /* 5 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_io_uring_setup, 6, 0),
-        /* 6 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_socket, 1, 0),
-        /* 7 */ BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        /* 8 */ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, TK_SC_ARG0),
-        /* 9 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AF_INET, 2, 0),
-        /* 10 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AF_INET6, 1, 0),
-        /* 11 */ BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        /* 12 */ BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | (EACCES & SECCOMP_RET_DATA)),
-    };
+    TkBpf t[TK_SC_FILTER_LEN];
+    struct sock_filter f[TK_SC_FILTER_LEN];
+    int n = tk_sc_no_net_filter(&a, t);
+    for (int i = 0; i < n; i++) {
+        f[i].code = t[i].code; f[i].jt = t[i].jt; f[i].jf = t[i].jf; f[i].k = t[i].k;
+    }
     struct sock_fprog prog;
-    prog.len = (unsigned short)(sizeof f / sizeof f[0]);
+    prog.len = (unsigned short)n;
     prog.filter = f;
     if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0) != 0) {
         char why[160];
@@ -569,7 +655,6 @@ TK_OS_FN void tk_sc_apply_no_net(TkOsWarn warn) {
                  "sockets are refused by the broker only", strerror(errno));
         warn("seccomp", why);
     }
-#undef TK_SC_ARG0
 #else
     warn("seccomp", "no seccomp socket filter for this architecture; IPv4/IPv6 sockets "
          "are refused by the broker only");

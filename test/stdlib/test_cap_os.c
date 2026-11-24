@@ -127,6 +127,61 @@ static void test_plan_text(void) {
     tk_os_plan_free(&p);
 }
 
+/* ── The seccomp filter, run on a tiny classic-BPF interpreter ───── */
+
+static uint32_t bpf_run(const TkBpf *f, int n, uint32_t arch, uint32_t nr, uint64_t arg0) {
+    unsigned char d[64];
+    memset(d, 0, sizeof d);
+    int32_t snr = (int32_t)nr;
+    memcpy(d + TK_SC_OFF_NR, &snr, 4);
+    memcpy(d + TK_SC_OFF_ARCH, &arch, 4);
+    memcpy(d + TK_SC_OFF_ARG0, &arg0, 8);
+    uint32_t a = 0;
+    for (int pc = 0; pc < n; pc++) {
+        const TkBpf *i = &f[pc];
+        switch (i->code) {
+        case TK_BPF_LD_W_ABS: if (i->k + 4 > sizeof d) return 0xDEADu; memcpy(&a, d + i->k, 4); break;
+        case TK_BPF_JEQ_K:    pc += (a == i->k) ? i->jt : i->jf; break;
+        case TK_BPF_JGE_K:    pc += (a >= i->k) ? i->jt : i->jf; break;
+        case TK_BPF_RET_K:    return i->k;
+        default:              return 0xBADu;
+        }
+    }
+    return 0xFA11u;   /* ran off the end: the kernel would refuse the program */
+}
+
+static void test_seccomp_filter(void) {
+    const uint32_t deny = TK_SC_RET_ERRNO | EACCES, allow = TK_SC_RET_ALLOW, kill = TK_SC_RET_KILL_PROCESS;
+    const uint32_t X86_64 = 0xC000003Eu, I386 = 0x40000003u, AARCH64 = 0xC00000B7u, ARM = 0x40000028u;
+    TkBpf f[TK_SC_FILTER_LEN];
+    int n = tk_sc_no_net_filter(&tk_sc_x86_64, f);
+    int inrange = n == TK_SC_FILTER_LEN && f[n - 1].code == TK_BPF_RET_K;
+    for (int i = 0; i < n; i++)
+        if ((f[i].code == TK_BPF_JEQ_K || f[i].code == TK_BPF_JGE_K) &&
+            (i + 1 + f[i].jt >= n || i + 1 + f[i].jf >= n)) inrange = 0;
+    ASSERT(inrange, "seccomp: every jump lands inside the program, which ends in a return");
+    ASSERT(bpf_run(f, n, X86_64, 41, 2) == deny, "seccomp x86_64: socket(AF_INET) refused");
+    ASSERT(bpf_run(f, n, X86_64, 41, 10) == deny, "seccomp x86_64: socket(AF_INET6) refused");
+    ASSERT(bpf_run(f, n, X86_64, 41, 1) == allow, "seccomp x86_64: socket(AF_UNIX) allowed");
+    ASSERT(bpf_run(f, n, X86_64, 0, 0) == allow, "seccomp x86_64: read allowed");
+    ASSERT(bpf_run(f, n, X86_64, 425, 0) == deny, "seccomp x86_64: io_uring_setup refused");
+    ASSERT(bpf_run(f, n, X86_64, 0x40000000u + 41, 2) == deny, "seccomp x86_64: an x32 call refused");
+    ASSERT(bpf_run(f, n, I386, 102, 1) == deny, "seccomp i386 (int 0x80): socketcall refused");
+    ASSERT(bpf_run(f, n, I386, 359, 2) == deny, "seccomp i386: socket(AF_INET) refused");
+    ASSERT(bpf_run(f, n, I386, 359, 1) == allow, "seccomp i386: socket(AF_UNIX) allowed");
+    ASSERT(bpf_run(f, n, I386, 425, 0) == deny, "seccomp i386: io_uring_setup refused");
+    ASSERT(bpf_run(f, n, I386, 3, 0) == allow, "seccomp i386: read allowed");
+    ASSERT(bpf_run(f, n, 0x12345678u, 41, 2) == kill, "seccomp: an unknown architecture is killed, not let through");
+    n = tk_sc_no_net_filter(&tk_sc_aarch64, f);
+    ASSERT(bpf_run(f, n, AARCH64, 198, 2) == deny, "seccomp aarch64: socket(AF_INET) refused");
+    ASSERT(bpf_run(f, n, AARCH64, 198, 1) == allow, "seccomp aarch64: socket(AF_UNIX) allowed");
+    ASSERT(bpf_run(f, n, AARCH64, 0x40000000u, 0) == allow, "seccomp aarch64: no x32 rule");
+    ASSERT(bpf_run(f, n, ARM, 281, 10) == deny, "seccomp aarch32 compat: socket(AF_INET6) refused");
+    ASSERT(bpf_run(f, n, ARM, 425, 0) == deny, "seccomp aarch32 compat: io_uring_setup refused");
+    ASSERT(bpf_run(f, n, ARM, 102, 0) == allow, "seccomp aarch32 compat: 102 is not socketcall there");
+    ASSERT(bpf_run(f, n, X86_64, 41, 2) == kill, "seccomp aarch64: an x86_64 call is killed");
+}
+
 /* ── The kernel half ──────────────────────────────────────────────── */
 
 static int warned = 0;
@@ -209,6 +264,7 @@ static void test_kernel(void) {
 
 int main(void) {
     test_plan_text();
+    test_seccomp_filter();
     test_kernel();
     if (failures) { printf("%d failure(s)\n", failures); return 1; }
     printf("all cap_os tests passed\n");
