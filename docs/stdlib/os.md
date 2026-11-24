@@ -131,7 +131,8 @@ The process id.
 Ends the process at once with `status` (\_exit(2): `atexit` handlers and
 buffered stdout are **not** flushed -- write with `os.write` or flush first).
 `os.exit(0)` after a recorded failure, such as a failed test assertion,
-exits `1` instead. Does not return.
+exits `1` instead. `process.exit` follows the same rule (127.532). Does not
+return.
 
 ### os.getenv(name: $str): $str
 

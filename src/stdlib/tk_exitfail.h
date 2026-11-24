@@ -37,7 +37,8 @@
  *     A status whose low 8 bits are 0 (256, …) would exit 0 and counts as 0;
  *   - os.exit(0) after a failure exits 1 as well, with the same line: os.exit
  *     is _exit() and skips atexit handlers, so tk_os_exit calls
- *     tk_exitfail_atexit() itself for a status of 0;
+ *     tk_exitfail_atexit() itself for a status of 0, and process.exit
+ *     (process_glue.c tk_process_exit_w, 127.532) does the same;
  *   - handlers registered BEFORE the first failure do not run, because the
  *     handler ends the process with _exit().  In this tree that is
  *     tk_err_release (frees one buffer) and, under ASan, the leak check;
