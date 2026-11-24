@@ -142,6 +142,6 @@ DIAGNOSTIC: kind=exit_status status=1 failures=2 first="std.test assertion faile
 and exits with status **1** -- or with `main`'s own status, when `main` returned a non-zero one (the line then says `status=3`, say). A run with no failed assertion exits with whatever `main` returns. Stated so nobody has to rediscover them:
 
 - A program that returns `3` after a failed assertion exits `3` (story 135.29). One that returns `0` exits `1`. A status whose low 8 bits are zero (`256`) would read as success, so it exits `1` too.
-- `os.exit(0)` after a failed assertion also exits `1`, with the same line. `os.exit` with a non-zero status exits with that status.
+- `os.exit(0)` after a failed assertion also exits `1`, with the same line, and so does `os.exit(256)` or any status whose low 8 bits are zero (127.536). `os.exit` with any other status exits with that status's low 8 bits, as `_exit(2)` keeps them.
 - A process killed by a signal is unaffected.
 - The same rule applies to a server that does not start (`std.http`, see [Starting, failing and the port](/docs/stdlib/http/#starting-failing-and-the-port)).
