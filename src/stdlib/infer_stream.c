@@ -443,7 +443,10 @@ static int build_shard_list(TkStreamState *s)
             continue;
 
         char full[TK_STREAM_PATH_MAX];
-        snprintf(full, sizeof(full), "%s/%s", s->model_dir, ent->d_name);
+        int fl = snprintf(full, sizeof(full), "%s/%s", s->model_dir,
+                          ent->d_name);
+        if (fl < 0 || (size_t)fl >= sizeof(full))
+            continue;   /* path does not fit: never load a truncated name */
 
         /* Insertion sort by layer index. */
         int pos = count;

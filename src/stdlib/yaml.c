@@ -411,14 +411,24 @@ static const char *json_skip_object(const char *p) {
     return p;
 }
 
+/* 127.544: the literals true/false/null were skipped as a fixed p+4 / p+5,
+ * so a document ending inside one (`[t`, `{"a":n`) left p past the string's
+ * terminator and every later read was out of bounds (heap-buffer-overflow
+ * under ASan; a loop over whatever memory followed).  Skip at most n bytes,
+ * never the terminator. */
+static const char *json_skip_lit(const char *p, int n) {
+    while (n-- > 0 && *p) p++;
+    return p;
+}
+
 static const char *json_skip_value(const char *p) {
     p = json_skip_ws(p);
     if (*p == '"') return json_skip_string(p);
     if (*p == '{') return json_skip_object(p);
     if (*p == '[') return json_skip_array(p);
-    if (*p == 't') return p + 4;
-    if (*p == 'f') return p + 5;
-    if (*p == 'n') return p + 4;
+    if (*p == 't') return json_skip_lit(p, 4);
+    if (*p == 'f') return json_skip_lit(p, 5);
+    if (*p == 'n') return json_skip_lit(p, 4);
     if (*p == '-' || (*p >= '0' && *p <= '9')) {
         if (*p == '-') p++;
         while (*p >= '0' && *p <= '9') p++;
@@ -433,8 +443,22 @@ static const char *json_skip_value(const char *p) {
     return p;
 }
 
-/* Recursive JSON-to-YAML with indentation */
-static void json_to_yaml_r(const char **pp, TkStrBuf *ob, int indent) {
+/* Recursive JSON-to-YAML with indentation.
+ *
+ * 127.542: every loop iteration below must consume input.  An element that
+ * is none of { [ " and no literal json_skip_value knows (the fuzz input
+ * `{"b":[1,2@]}`: '@'), and any element past the YAML_MAX_INDENT depth cap,
+ * comes back with *pp unmoved; the sequence loop then saw the same byte, not
+ * ']', and appended "\n- " forever (libFuzzer OOM at 2 GiB).  The sequence
+ * loop now stops when an element made no progress and *stop unwinds every
+ * enclosing frame, so no parent goes on to parse the bytes a child left
+ * behind.  The object loop needs no such guard: each of its iterations
+ * consumes a key's '"' or breaks.  The work is linear in the input and the
+ * output is bounded by it (at most YAML_MAX_INDENT + a few bytes per input
+ * byte).  An empty element on a comma
+ * (`[1,,2]`, `{"a":,"b":1}`) consumes the comma and converts as before. */
+static void json_to_yaml_r(const char **pp, TkStrBuf *ob, int indent,
+                           int *stop) {
     if (indent > YAML_MAX_INDENT) return;   /* 121.6: bound recursion depth */
     const char *p = json_skip_ws(*pp);
 
@@ -459,11 +483,16 @@ static void json_to_yaml_r(const char **pp, TkStrBuf *ob, int indent) {
             if (*p == ':') p++;
             p = json_skip_ws(p);
             /* Value */
-            json_to_yaml_r(&p, ob, indent + 2);
+            json_to_yaml_r(&p, ob, indent + 2, stop);
+            /* Only a stop from below ends this loop: it cannot spin, because
+             * every iteration consumes a key's '"' or breaks at the key check
+             * above, so a value that consumes nothing (`{"a":}`) still
+             * converts as before. */
+            if (*stop) break;
             p = json_skip_ws(p);
             if (*p == ',') p++;
         }
-        if (*p == '}') p++;
+        if (!*stop && *p == '}') p++;
         *pp = p;
         return;
     }
@@ -475,11 +504,14 @@ static void json_to_yaml_r(const char **pp, TkStrBuf *ob, int indent) {
         while (*p && *p != ']') {
             p = json_skip_ws(p);
             strbuf_appendf(ob, "\n%*s- ", indent, "");
-            json_to_yaml_r(&p, ob, indent + 2);
+            const char *before = p;
+            json_to_yaml_r(&p, ob, indent + 2, stop);
+            /* 127.542: no progress (except on a comma) -- stop everything */
+            if (*stop || (p == before && *p != ',')) { *stop = 1; break; }
             p = json_skip_ws(p);
             if (*p == ',') p++;
         }
-        if (*p == ']') p++;
+        if (!*stop && *p == ']') p++;
         *pp = p;
         return;
     }
@@ -508,7 +540,8 @@ const char *yaml_from_json(const char *json) {
     if (!json) return "";
     TkStrBuf ob = TK_STRBUF_INIT;
     const char *p = json;
-    json_to_yaml_r(&p, &ob, 0);
+    int stop = 0;
+    json_to_yaml_r(&p, &ob, 0, &stop);
     /* Trim the leading newline a top-level mapping starts with. */
     size_t skip = (!ob.oom && ob.len && ob.buf[0] == '\n') ? 1 : 0;
     return seal_buf(&ob, skip, "");

@@ -1,0 +1,194 @@
+// toke v0.4 -- LEXEME-level grammar for llguidance (story 131.141).
+//
+// GENERATED from docs/spec/toke.gbnf by scripts/gbnf_tune.py -- do not edit.
+// Edit toke.gbnf, then run `python3 scripts/gbnf_tune.py --write`.
+// `make check-grammar-artefacts` fails if this file differs from a fresh
+// generation, and (llguidance installed) if llguidance's verdict differs from
+// the reference recogniser's on any fragment of test/gbnf/fragments.json.
+//
+// The parser rules are toke.gbnf's (`-` spelled `_`); its lexical rules
+// (identifiers, numbers, strings, comments, whitespace runs) are regex
+// lexemes below.  Nested comments and string interpolation are unrolled to
+// 8 levels of nesting; deeper nesting is rejected (the parser accepts it).
+// Load with `start: root` prepended:
+//     llguidance.grammar_from("lark", "start: root\n" + text)
+// toke.lark (one character per terminal) is the form for Lark's own parser.
+
+root: ws moddecl (sep importdecl)* (sep typedecl)* (sep constdecl)* (sep letstmt)* (sep funcdecl)* (ws ";")? ws
+sep: ws ";" ws
+moddecl: "m" ws "=" ws modpath
+importdecl: "i" ws "=" ws IDENT ws ":" ws modpath (ws STRING)?
+modpath: seg (ws "." ws seg)*
+seg: IDENT | TYPEIDENT
+typedecl: "t" ws "=" ws ("$" ws IDENT | IDENT | TYPEIDENT) ws "{" ws field (ws ";" ws field)* ws "}"
+field: ("$" ws)? (IDENT | TYPEIDENT) ws ":" ws type
+constdecl: CNAME ws "=" ws literal ws ":" ws type
+funcdecl: "f" ws "=" ws IDENT ws "(" ws params? ws ")" ws ":" ws retspec (ws block)?
+params: param (ws ";" ws param)*
+param: IDENT ws ":" ws type
+retspec: type (ws "!" ws type)?
+block: "{" ws stmts? "}"
+stmts: (item ws)* simple ws | (item ws)+
+stmts_p: simple_p ws | item_p ws stmts?
+item: simple ws ";" | compound (ws ";")? | arena (ws ";")?
+item_p: simple_p ws ";"
+simple: letstmt
+    | assign
+    | ret
+    | "br"
+    | scope
+    | exprstmt
+simple_p: "<" (ws expr)? | orx_p
+compound: ifstmt | loop
+letstmt: "let" ws1 IDENT (ws ":" ws type)? ws "=" ws ("mut" ws "." ws)? expr
+assign: IDENT ws "=" ws expr
+ret: "<" (ws expr)? | "rt" expr_aw?
+scope: "sc" ws block
+exprstmt: mtexpr | orx
+ifstmt: "if" ws "(" ws expr ws ")" ws block (ws "el" (ws1 ifstmt | ws block))?
+loop: "lp" ws "(" ws (loop3 | expr) ws ")" ws block
+loop3: ("let" ws1)? IDENT ws "=" ws expr ws ";" ws expr ws ";" ws IDENT ws "=" ws expr
+arena: "{" ws "arena" (ws | ws1 stmts | stmts_p) "}"
+expr: ifexpr | mtexpr | orx
+expr_aw: ws1 expr | orx_p
+ifexpr: "if" ws "(" ws expr ws ")" ws block ws "el" (ws1 ifexpr | ws block)
+mtexpr: "mt" (ws1 orx_nt | orx_nt_p) ws "{" ws arm (ws ";" ws arm)* (ws ";")? ws "}"
+arm: ("$" ws IDENT | IDENT | TYPEIDENT) ws ":" ws IDENT (ws "<" (ws expr)? | expr_aw)
+orx: un orrest
+orx_p: un_p orrest
+orrest: arrest (ws cmpop ws arx)? (ws logop ws cmpx)*
+arrest: (ws arop ws un)*
+arx: un arrest
+cmpx: arx (ws cmpop ws arx)?
+logop: "||"
+    | "&&"
+    | "|"
+    | "^"
+    | "&"
+cmpop: "=="
+    | "!="
+    | "<="
+    | ">="
+    | "<"
+    | ">"
+arop: "<<"
+    | ">>"
+    | "+"
+    | "-"
+    | "*"
+    | "/"
+    | "%"
+orx_nt: un_nt | un orrest_nt
+orx_nt_p: un_nt_p | un_p orrest_nt
+orrest_nt: arrest ws arop ws un_nt | arrest ws cmpop ws arx_nt | arrest (ws cmpop ws arx)? (ws logop ws cmpx)* ws logop ws cmpx_nt
+arx_nt: (un ws arop ws)* un_nt
+cmpx_nt: arx_nt | arx ws cmpop ws arx_nt
+un: ("-" | "~") ws un
+    | "!" ws un_nsl
+    | cp
+    | "spawn" expr_aw
+un_p: ("-" | "~") ws un | "!" ws un_nsl | cp_p
+un_nsl: ("-" | "~") ws un
+    | "!" ws un_nsl
+    | cp_nsl
+    | "spawn" expr_aw
+un_nt: ("-" | "~") ws un_nt
+    | "!" ws un_nt
+    | cp_nt
+    | "spawn" expr_aw
+un_nt_p: ("-" | "~") ws un_nt | "!" ws un_nt | cp_nt_p
+cast_w: (ws1 "as" asty)? prop?
+cast_p: (ws "as" asty)? prop?
+cast1_w: ws1 "as" asty prop? | prop
+cast1_p: ws "as" asty prop? | prop
+asty: ws1 type | type_p
+prop: ws "!" ws type
+cp: prim_ew cast_w
+    | prim_ep cast_p
+    | prim tl_ew cast_w
+    | prim tl_ep cast_p
+    | "fn" cast_w
+cp_p: prim_p_ew cast_w
+    | prim_p_ep cast_p
+    | prim_p tl_ew cast_w
+    | prim_p tl_ep cast_p
+cp_nsl: prim_ew cast_w
+    | prim_ep_nsl cast_p
+    | prim_sl cast1_p
+    | prim tl_ew cast_w
+    | prim tl_ep cast_p
+    | "fn" cast_w
+cp_nt: prim_ew_nt cast_w
+    | prim_tr cast1_w
+    | prim_ep cast_p
+    | prim tl_ew cast_w
+    | prim tl_ep cast_p
+    | "fn" cast_w
+cp_nt_p: prim_ref cast_w
+    | prim_typ cast1_w
+    | prim_p_ep cast_p
+    | prim_p tl_ew cast_w
+    | prim_p tl_ep cast_p
+tl_ew: tlg* (tlg_d | idx idx2*)
+tl_ep: tlg* tlg_c
+tlg: tlg_c | tlg_d
+tlg_c: (idx idx2*)? ws "(" ws args? ws ")"
+tlg_d: (idx idx2*)? ws "." ws VNAME
+idx: ws "." ws INT
+idx2: ws1 "." ws INT | "." ws1 INT
+args: expr (ws ";" ws expr)*
+prim: prim_ew | prim_ep
+prim_ew: prim_ew_nt | prim_tr
+prim_ew_nt: VNAME | literal_w | prim_ref
+prim_ep: prim_ep_nsl | prim_sl
+prim_ep_nsl: closure
+    | STRING
+    | prim_arr
+    | prim_par
+prim_p: prim_p_ew | prim_p_ep
+prim_p_ew: prim_typ | prim_ref
+prim_p_ep: STRING
+    | prim_slp
+    | prim_arr
+    | prim_par
+prim_tr: TYPEIDENT | prim_typ
+prim_typ: "$" ws IDENT
+prim_ref: "&" ws IDENT
+prim_sl: TYPEIDENT ws "{" sbody "}" | prim_slp
+prim_slp: "$" ws IDENT ws "{" sbody_d "}"
+prim_arr: "@" ws "(" ws (aitems ws)? ")"
+prim_par: "(" ws expr ws ")"
+closure: "fn" ws "(" ws params? ws ")" (ws ":" ws retspec)? ws block
+sbody: ws (finit (ws ";" ws finit)* (ws ";")? ws)?
+sbody_d: ws (finit_d (ws ";" ws finit_d)* (ws ";")? ws)?
+finit: (IDENT | TYPEIDENT) ws ":" ws expr
+finit_d: ("$" ws)? (IDENT | TYPEIDENT) ws ":" ws expr
+aitems: expr (ws ";" ws expr)* (ws ";")? | expr ws ":" ws expr (ws ";" ws expr ws ":" ws expr)* (ws ";")?
+type: type_w | type_p
+type_w: SCALAR | TYPEIDENT | IDENT ws "." ws "$" ws IDENT
+type_p: type_np_p | functype
+type_np_p: "$" ws IDENT
+    | "*" ws type
+    | "@" ws "(" ptype ws (":" ws type ws)? ")"
+    | "@" ws (type_w | type_np_p)
+functype: "(" (ptype (ws ";" ws type)*)? ws ")" ws ":" ws type
+ptype: ws (type_w | "$" ws IDENT | "@" ws "(" ptype ws (":" ws type ws)? ")" | "@" ws (type_w | type_np_p) | functype) | ws1 "*" ws type
+literal: literal_w | STRING
+literal_w: FLOAT
+    | INT
+    | "true"
+    | "false"
+ws: (SP | COMMENT)*
+ws1: (SP | COMMENT)+
+
+// lexemes: the lexical rules, inlined to regular expressions
+SP: /(?:[ \x{9}\x{d}\x{a}])+/
+COMMENT: /\(\*(?:(?:(?:[^(*]|(?:\()+[^(*]|(?:\*)+(?:[^()*]|(?:\()+[^(*])))*(?:(?:(?:\*)+|(?:\*)*(?:\()+))?\(\*(?:(?:(?:[^(*]|(?:\()+[^(*]|(?:\*)+(?:[^()*]|(?:\()+[^(*])))*(?:(?:(?:\*)+|(?:\*)*(?:\()+))?\(\*(?:(?:(?:[^(*]|(?:\()+[^(*]|(?:\*)+(?:[^()*]|(?:\()+[^(*])))*(?:(?:(?:\*)+|(?:\*)*(?:\()+))?\(\*(?:(?:(?:[^(*]|(?:\()+[^(*]|(?:\*)+(?:[^()*]|(?:\()+[^(*])))*(?:(?:(?:\*)+|(?:\*)*(?:\()+))?\(\*(?:(?:(?:[^(*]|(?:\()+[^(*]|(?:\*)+(?:[^()*]|(?:\()+[^(*])))*(?:(?:(?:\*)+|(?:\*)*(?:\()+))?\(\*(?:(?:(?:[^(*]|(?:\()+[^(*]|(?:\*)+(?:[^()*]|(?:\()+[^(*])))*(?:(?:(?:\*)+|(?:\*)*(?:\()+))?\(\*(?:(?:(?:[^(*]|(?:\()+[^(*]|(?:\*)+(?:[^()*]|(?:\()+[^(*])))*(?:(?:(?:\*)+|(?:\*)*(?:\()+))?\(\*(?:(?:[^(*]|(?:\()+[^(*]|(?:\*)+(?:[^()*]|(?:\()+[^(*])))*(?:\*)*\*\))*(?:(?:[^(*]|(?:\()+[^(*]|(?:\*)+(?:[^()*]|(?:\()+[^(*])))*(?:\*)*\*\))*(?:(?:[^(*]|(?:\()+[^(*]|(?:\*)+(?:[^()*]|(?:\()+[^(*])))*(?:\*)*\*\))*(?:(?:[^(*]|(?:\()+[^(*]|(?:\*)+(?:[^()*]|(?:\()+[^(*])))*(?:\*)*\*\))*(?:(?:[^(*]|(?:\()+[^(*]|(?:\*)+(?:[^()*]|(?:\()+[^(*])))*(?:\*)*\*\))*(?:(?:[^(*]|(?:\()+[^(*]|(?:\*)+(?:[^()*]|(?:\()+[^(*])))*(?:\*)*\*\))*(?:(?:[^(*]|(?:\()+[^(*]|(?:\*)+(?:[^()*]|(?:\()+[^(*])))*(?:\*)*\*\))*(?:(?:[^(*]|(?:\()+[^(*]|(?:\*)+(?:[^()*]|(?:\()+[^(*])))*(?:\*)*\*\)/
+IDENT: /(?:[a-z]|(?:[cdghjkn-qu-z](?:[a-zA-Z0-9])+|a(?:[0-9A-Za-rt-z](?:[a-zA-Z0-9])*|s(?:[a-zA-Z0-9])+)|b(?:[0-9A-Za-qs-z](?:[a-zA-Z0-9])*|r(?:[a-zA-Z0-9])+)|e(?:[0-9A-Za-km-z](?:[a-zA-Z0-9])*|l(?:[a-zA-Z0-9])+)|f(?:[0-9A-Zb-mo-z](?:[a-zA-Z0-9])*|n(?:[a-zA-Z0-9])+|a(?:|[0-9A-Za-km-z](?:[a-zA-Z0-9])*|l(?:|[0-9A-Za-rt-z](?:[a-zA-Z0-9])*|s(?:|[0-9A-Za-df-z](?:[a-zA-Z0-9])*|e(?:[a-zA-Z0-9])+))))|i(?:[0-9A-Za-eg-z](?:[a-zA-Z0-9])*|f(?:[a-zA-Z0-9])+)|l(?:[0-9A-Za-df-oq-z](?:[a-zA-Z0-9])*|p(?:[a-zA-Z0-9])+|e(?:|[0-9A-Za-su-z](?:[a-zA-Z0-9])*|t(?:[a-zA-Z0-9])+))|m(?:[0-9A-Za-sv-z](?:[a-zA-Z0-9])*|t(?:[a-zA-Z0-9])+|u(?:|[0-9A-Za-su-z](?:[a-zA-Z0-9])*|t(?:[a-zA-Z0-9])+))|r(?:[0-9A-Za-su-z](?:[a-zA-Z0-9])*|t(?:[a-zA-Z0-9])+)|s(?:[0-9A-Zabd-z](?:[a-zA-Z0-9])*|c(?:[a-zA-Z0-9])+)|t(?:[0-9A-Za-qs-z](?:[a-zA-Z0-9])*|r(?:|[0-9A-Za-tv-z](?:[a-zA-Z0-9])*|u(?:|[0-9A-Za-df-z](?:[a-zA-Z0-9])*|e(?:[a-zA-Z0-9])+))))|fn)/
+VNAME: /(?:[a-z]|(?:[cdghjkn-qu-z](?:[a-zA-Z0-9])+|a(?:[0-9A-Za-rt-z](?:[a-zA-Z0-9])*|s(?:[a-zA-Z0-9])+)|b(?:[0-9A-Za-qs-z](?:[a-zA-Z0-9])*|r(?:[a-zA-Z0-9])+)|e(?:[0-9A-Za-km-z](?:[a-zA-Z0-9])*|l(?:[a-zA-Z0-9])+)|f(?:[0-9A-Zb-mo-z](?:[a-zA-Z0-9])*|n(?:[a-zA-Z0-9])+|a(?:|[0-9A-Za-km-z](?:[a-zA-Z0-9])*|l(?:|[0-9A-Za-rt-z](?:[a-zA-Z0-9])*|s(?:|[0-9A-Za-df-z](?:[a-zA-Z0-9])*|e(?:[a-zA-Z0-9])+))))|i(?:[0-9A-Za-eg-z](?:[a-zA-Z0-9])*|f(?:[a-zA-Z0-9])+)|l(?:[0-9A-Za-df-oq-z](?:[a-zA-Z0-9])*|p(?:[a-zA-Z0-9])+|e(?:|[0-9A-Za-su-z](?:[a-zA-Z0-9])*|t(?:[a-zA-Z0-9])+))|m(?:[0-9A-Za-sv-z](?:[a-zA-Z0-9])*|t(?:[a-zA-Z0-9])+|u(?:|[0-9A-Za-su-z](?:[a-zA-Z0-9])*|t(?:[a-zA-Z0-9])+))|r(?:[0-9A-Za-su-z](?:[a-zA-Z0-9])*|t(?:[a-zA-Z0-9])+)|s(?:[0-9A-Zabd-z](?:[a-zA-Z0-9])*|c(?:[a-zA-Z0-9])+)|t(?:[0-9A-Za-qs-z](?:[a-zA-Z0-9])*|r(?:|[0-9A-Za-tv-z](?:[a-zA-Z0-9])*|u(?:|[0-9A-Za-df-z](?:[a-zA-Z0-9])*|e(?:[a-zA-Z0-9])+)))))/
+CNAME: /(?:[a-eg-hj-ln-su-z]|(?:[cdghjkn-qu-z](?:[a-zA-Z0-9])+|a(?:[0-9A-Za-rt-z](?:[a-zA-Z0-9])*|s(?:[a-zA-Z0-9])+)|b(?:[0-9A-Za-qs-z](?:[a-zA-Z0-9])*|r(?:[a-zA-Z0-9])+)|e(?:[0-9A-Za-km-z](?:[a-zA-Z0-9])*|l(?:[a-zA-Z0-9])+)|f(?:[0-9A-Zb-mo-z](?:[a-zA-Z0-9])*|n(?:[a-zA-Z0-9])+|a(?:|[0-9A-Za-km-z](?:[a-zA-Z0-9])*|l(?:|[0-9A-Za-rt-z](?:[a-zA-Z0-9])*|s(?:|[0-9A-Za-df-z](?:[a-zA-Z0-9])*|e(?:[a-zA-Z0-9])+))))|i(?:[0-9A-Za-eg-z](?:[a-zA-Z0-9])*|f(?:[a-zA-Z0-9])+)|l(?:[0-9A-Za-df-oq-z](?:[a-zA-Z0-9])*|p(?:[a-zA-Z0-9])+|e(?:|[0-9A-Za-su-z](?:[a-zA-Z0-9])*|t(?:[a-zA-Z0-9])+))|m(?:[0-9A-Za-sv-z](?:[a-zA-Z0-9])*|t(?:[a-zA-Z0-9])+|u(?:|[0-9A-Za-su-z](?:[a-zA-Z0-9])*|t(?:[a-zA-Z0-9])+))|r(?:[0-9A-Za-su-z](?:[a-zA-Z0-9])*|t(?:[a-zA-Z0-9])+)|s(?:[0-9A-Zabd-z](?:[a-zA-Z0-9])*|c(?:[a-zA-Z0-9])+)|t(?:[0-9A-Za-qs-z](?:[a-zA-Z0-9])*|r(?:|[0-9A-Za-tv-z](?:[a-zA-Z0-9])*|u(?:|[0-9A-Za-df-z](?:[a-zA-Z0-9])*|e(?:[a-zA-Z0-9])+))))|fn)/
+TYPEIDENT: /[A-Z](?:[a-zA-Z0-9])*/
+INT: /(?:0[xX](?:[0-9a-fA-F])+|0[bB](?:[01])+|(?:[0-9])+)/
+FLOAT: /(?:[0-9])+\.(?:[0-9])+/
+STRING: /"(?:(?:[^"\\]|\\["\\ntr0]|\\x[0-9a-fA-F][0-9a-fA-F]|\\\((?:(?:[^()]|\((?:(?:[^()]|\((?:(?:[^()]|\((?:(?:[^()]|\((?:(?:[^()]|\((?:(?:[^()]|\((?:(?:[^()]|\((?:[^()])*\)))*\)))*\)))*\)))*\)))*\)))*\)))*\)))*"/
+SCALAR: /(?:u8|u16|u32|u64|i8|i16|i32|i64|f32|f64|bool|str|byte|void)/

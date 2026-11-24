@@ -195,6 +195,29 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
 
 ### Security fixes
 
+- **`yaml.fromjson` always returns** (127.542, a denial of service). A 35-byte
+  malformed flow mapping found by the security nightly's libFuzzer run
+  (`crash-yaml-oom-bcd1502b`: libFuzzer died at a 2 GiB malloc; the standalone
+  replay never returned) held the converter in a loop: the sequence loop
+  appended `"\n- "` for an element that consumed no input -- a byte that is no
+  JSON value (`[1,2@]`) or any element nested past the 256-level depth cap
+  (`[` x 400) -- and then saw the same byte again, forever, growing its output
+  without bound. Each loop now stops at an element that made no progress
+  (other than an empty element on a comma, which consumes the comma) and the
+  whole conversion stops there, so the work is linear in the input and the
+  output bounded by it. Every input that returned before converts to exactly
+  the same text, including elided elements such as `[1,,2]`. Test: C2285; the inputs are kept as
+  `test/fuzz/corpus-adversarial/yaml_flow_seq_no_progress_127542.json` and
+  `yaml_deep_seq_past_cap_127542.json`, which `make fuzz-smoke` replays.
+- **`yaml.fromjson` no longer reads past the end of a document that stops
+  inside `true`, `false` or `null`** (127.544, a heap over-read found auditing
+  the converter for 127.542). The literals were skipped as a fixed 4 or 5
+  bytes, so `[t`, `{"a":n` or `[1,f` left the cursor past the string's
+  terminator and every later read was out of bounds (heap-buffer-overflow
+  under ASan; without it the converter walked whatever memory followed). A
+  literal is now skipped over at most its length and never past the end; a
+  complete literal converts as before. Test: C2286; the input is kept as
+  `test/fuzz/corpus-adversarial/yaml_truncated_literal_127544.json`.
 - **`tkc` no longer reads freed memory when it warns that `pkg.lock` is stale**
   (127.449). A build or `--check` of a program with a `pkg.*` import whose
   `pkg.lock` no longer matches `pkg.toml` formatted W9010's dependency name from
@@ -228,9 +251,26 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   `http_cache_stale_if_error`'s `METHOD|URI` (a 1024-byte stack buffer), are
   now allocated to their full length; matching stays exact (127.514). Nothing
   in the tree calls `http_cache_*`. Test: C2160.
+- **`toon.fromjson` terminates on every input** (127.543, a denial of
+  service). After each array element the converter skips what is not the next
+  object, and a stray `}` at array level made that skip consume nothing, so
+  `[{"a":1}}` never returned (found by the security nightly's libFuzzer run as
+  a 1201 s timeout on a 50-byte input). Every pass of the skip now consumes at
+  least one byte: the stray byte is dropped like any other non-object element,
+  so `[{"a":1}},{"a":2}]` converts to the two rows `[{"a":1},{"a":2}]` does, and
+  the conversion is linear in the input. Well-formed JSON converts unchanged.
+  Test: C2290; the input is kept as
+  `test/fuzz/corpus-adversarial/toon_from_json_stray_close_127543.json`.
 
 ### Build and CI gates
 
+- **`make fuzz-smoke` fails on an input that never returns, instead of hanging**
+  (127.545). Each replayed input now has `FUZZ_REPLAY_TIMEOUT` seconds (default 25,
+  `0` turns it off): the standalone driver arms an alarm per input and exits 70 with
+  `fuzz-replay: TIMEOUT after N s on <path>`, and libFuzzer gets `-timeout=`. Before,
+  the 127.542 and 127.543 inputs made the standalone replay run forever and the
+  libFuzzer replay take 20 minutes per input. C2287 checks it with a harness that
+  spins on one input.
 - **`make check-tk-parse`: every committed `.tk` outside `test/` parses** (131.142).
   131.52 found five that did not: the GitHub Linguist samples
   (`linguist-submission/samples/toke/`, underscored identifiers and `=` for `==`) and
@@ -254,6 +294,22 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   (`bench/mask_cost/python-subset.gbnf`, checked by `make bench-mask-cost-check`:
   accepted ⇒ CPython `ast.parse` accepts) and JSON, under one vocabulary
   (cl100k_base); results: `docs/about/reviews/mask-cost-2026-11-23.md`.
+- **Engine-tuned grammars: `docs/spec/toke-lexeme.lark` and `docs/spec/toke-xgr.gbnf`**
+  (131.141). Both are generated from `toke.gbnf` by `scripts/gbnf_tune.py --write`.
+  `toke-lexeme.lark` is for llguidance: the parser rules stay, and the lexical rules
+  (identifiers, numbers, strings, comments, whitespace runs) become regex lexemes.
+  Comments and string interpolation nested deeper than 8 levels are rejected, which
+  the parser would accept, so this form accepts a subset of the language of
+  `toke.gbnf`. `toke-xgr.gbnf` is for XGrammar and describes the same language as
+  `toke.gbnf`: whitespace is inlined, and the rules that end a word token carry
+  lookahead assertions. `make check-grammar-artefacts` now also fails when either file
+  is stale. With the engines installed, it also fails when llguidance or XGrammar
+  disagrees with the reference recogniser on any fragment of `test/gbnf/fragments.json`.
+  Without them (as in CI today), the agreement checks report SKIPPED and only the
+  staleness check runs. Agreement on the fragment set is evidence, not a proof of
+  equivalence. The Python-subset baseline gets the same two forms, checked by
+  `make bench-mask-cost-check`, and `make bench-mask-cost` measures all four. Results:
+  `docs/about/reviews/mask-cost-2026-11-24.md`.
 
 - **`make fuzz-smoke` replays its inputs under libFuzzer** (127.480). It passed
   libFuzzer a seed directory plus adversarial files, a mix libFuzzer refuses

@@ -171,11 +171,18 @@ int main(int argc, char **argv) {
 }
 CEOF
   BASESRCS=(); BASEFLAGS=()
+  # 127.270 / C703: the base set is linked as cached objects built with CF.
+  CF=(-std=c99 -D_GNU_SOURCE -I"${S}")
   while IFS= read -r l; do [ -n "$l" ] && BASESRCS+=("$l"); done \
-      < <("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --tkc "${TKC}")
+      < <("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --tkc "${TKC}" --cc cc --objects -- "${CF[@]}")
+  # The base set's extra link flags come from `tkc --emit-deps` (the part
+  # after the first "---"), as in C1561: a --flags call would be outside
+  # --objects, which C703 case 12 forbids.
+  printf 'm=lf;\nf=main():i64{<0};\n' > lflags.tk
   while IFS= read -r l; do [ -n "$l" ] && BASEFLAGS+=($l); done \
-      < <("${REPO_ROOT}/scripts/stdlib_link_set.sh" --stdlib "${S}" --tkc "${TKC}" --flags)
-  if cc -std=c99 -D_GNU_SOURCE -I"${S}" -o th th.c "${BASESRCS[@]}" \
+      < <("${TKC}" --emit-deps lflags.tk 2>/dev/null \
+          | awk 'seen == 1 && /^---$/ { exit } seen == 1 && NF { print } /^---$/ { seen = 1 }')
+  if cc "${CF[@]}" -o th th.c "${BASESRCS[@]}" \
         ${BASEFLAGS[@]+"${BASEFLAGS[@]}"} -lpthread > cc.log 2>&1; then
     TK_MEM_STATS=1 ./th 2> th.err; rc=$?
     m=$(field th.err malloc_calls); f=$(field th.err free_calls)
