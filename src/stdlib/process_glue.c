@@ -185,6 +185,11 @@ int64_t tk_process_isalive_w(int64_t pid) {
     return (int64_t)process_is_running(h);
 }
 int64_t tk_process_exit_w(int64_t code) {
+    /* 127.532: the same rule as os.exit (127.231, os.c tk_os_exit): _exit()
+     * skips atexit handlers, so a recorded failure would be lost by
+     * process.exit(0).  tk_exitfail_atexit() returns when there is none;
+     * otherwise it reports, prints the TK_MEM_STATS line, and exits 1. */
+    if (code == 0) tk_exitfail_atexit();
     if (tk_exit_report) tk_exit_report();   /* 127.529: TK_MEM_STATS */
     _exit((int)code);
     return 0;
