@@ -4814,6 +4814,90 @@
         "date": "2026-09-19",
         "load_warning": true
       }
+    },
+    {
+      "id": "str-char-read",
+      "family": "str",
+      "intent": "Read the single character at index i of a string to test or classify it.",
+      "applicability": "Any per-character test of a string: compare the character at i with one character, or classify it by its byte value. s.charcode(t;i) is a plain i64 (0 when i is out of range), so it needs no mt and carries no union; the one-character slice t.slice(i;i+1) is str!$sliceerr since 127.462 and must be read through mt or !. Compare against the byte value (44 is ','). Not for a substring longer than one character, and not for parsing structured text (s.split, s.fields, json.dec: idiom-v0.4#4). Owner answer R2 (2026-11-12) routes corpus records that read one character through a slice to this form.",
+      "card_rule": "one char: s.charcode(t;i)==44, no slice",
+      "candidates": [
+        {
+          "form": "a",
+          "label": "s.charcode(t;i)==44",
+          "fixture": "patterns/str-char-read/a.tk",
+          "min_bytes": 102,
+          "tokens": {
+            "proxy8k": 15,
+            "byte256": 102,
+            "v03": 24,
+            "qwen25coder": 50,
+            "cl100k": 48
+          },
+          "wall_ms_median": 51.539,
+          "wall_ci95": [
+            48.076,
+            56.675
+          ],
+          "rss_kb_median": 5616,
+          "allocs": {
+            "calls": 128198,
+            "bytes": 3109596
+          },
+          "bigO_ratio": 2.399,
+          "pat_n": 128000,
+          "runtime_verdict": "best",
+          "token_verdict": "best"
+        },
+        {
+          "form": "b",
+          "label": "mt t.slice(i;i+1) ==\",\"",
+          "fixture": "patterns/str-char-read/b.tk",
+          "min_bytes": 125,
+          "tokens": {
+            "proxy8k": 19,
+            "byte256": 125,
+            "v03": 30,
+            "qwen25coder": 62,
+            "cl100k": 61
+          },
+          "wall_ms_median": 93.394,
+          "wall_ci95": [
+            84.591,
+            109.881
+          ],
+          "rss_kb_median": 40128,
+          "allocs": {
+            "calls": 128198,
+            "bytes": 3109596
+          },
+          "bigO_ratio": 3.456,
+          "pat_n": 128000,
+          "runtime_verdict": "slower",
+          "token_verdict": "more"
+        }
+      ],
+      "verdict": {
+        "canonical": "a",
+        "hot_path": null,
+        "choose_hot_path_when": null,
+        "status": "provisional"
+      },
+      "source": [
+        "ast-mine:35",
+        "ast-mine:42"
+      ],
+      "bug_caveats": [],
+      "lint": null,
+      "measured_at": {
+        "tkc_sha": "3a8f0ae64a8b",
+        "tkc_version": "toke 3.2.0 (git 3a8f0ae64a8b)",
+        "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
+        "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
+        "bench_result": "20261124-145551.json",
+        "date": "2026-11-24",
+        "load_warning": true
+      }
     }
   ]
 }

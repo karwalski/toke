@@ -672,6 +672,20 @@ Tests: D730–D734, C2101 (a differential of each fix over every sign combinatio
 - **The stale `tree-sitter-toke/` copy is archived** (127.457); the maintained grammar is
   `tree-sitter-toke/` in karwalski/toke-spec.
 
+- **The pattern catalogue gains `str-char-read`: one character is read with
+  `s.charcode(t;i)`, not a one-character slice** (131.143; owner answer R2, 2026-11-12).
+  Since 127.462 `t.slice(i;i+1)` is `str!$sliceerr`, so a corpus record that compared one
+  character as a slice no longer checks; R2 routes those records to agent repair with a
+  catalogue pattern. Two forms were measured through the catalogue process (fixtures
+  `patterns/str-char-read/{a,b}.tk`, byte-identical output; tokens by `count_tokens.py`,
+  runtime by `bench/patterns/run_patterns.py`, verdicts derived by `render_catalogue.py
+  ingest`): `s.charcode(t;i)==44` is canonical (best on both axes), `mt t.slice(i;i+1){..}==","`
+  is more tokens and slower. Recorded under load, so the entry is provisional with
+  `load_warning` until the 131.25 re-measure. The card gains the rule
+  `one char: s.charcode(t;i)==44, no slice`; the spec page, guide chapter and card snippet
+  are re-rendered and the must-merge inputs re-pinned. toke-tokenizer's must-merge list is
+  re-derived (branch `fix/131.143-mustmerge`; merge both together).
+
 - **The pattern verdict tooling implements the identical-code tie, and acc-array is
   re-measured** (127.440, 127.437; owner decision 4.11 (d), 2026-11-15). `derive_verdicts`
   (`scripts/patterns/validate_catalogue.py`, used by `render_catalogue.py ingest`) now

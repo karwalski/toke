@@ -4,7 +4,7 @@
   "consumer": "toke-tokenizer data/must_merge_v04.json (scripts/derive_must_merge.py, story 131.23)",
   "note": "sha256 pins of every input of the must-merge derivation. `make check-patterns` fails when a pinned file changes; re-pin only after re-deriving the consumer. Never hand-edit.",
   "catalogues": {
-    "patterns/catalogue.json": "ea9b223e363cd577e0c5aa3c10ff73cccc82b15e00ff0382631341c8f9b3e14c"
+    "patterns/catalogue.json": "27ff5afb07e883b951f76a16c57ede886a810f340e74a2a464f39da20e7242ed"
   },
   "fixtures": [
     {
@@ -363,6 +363,13 @@
       "form": "b",
       "fixture": "patterns/str-build-loop/b.tk",
       "sha256": "b6011f8364a881b88d745783a84b005011ed753ac89b4c63785d5c972a7457b3"
+    },
+    {
+      "id": "str-char-read",
+      "role": "canonical",
+      "form": "a",
+      "fixture": "patterns/str-char-read/a.tk",
+      "sha256": "6b5d215f7f70c0359a0e8e6872b4e26ec60d32c5c181a423fb5ae47353262afc"
     },
     {
       "id": "str-interp-vs-join",
