@@ -450,11 +450,13 @@ static const char *json_skip_value(const char *p) {
  * `{"b":[1,2@]}`: '@'), and any element past the YAML_MAX_INDENT depth cap,
  * comes back with *pp unmoved; the sequence loop then saw the same byte, not
  * ']', and appended "\n- " forever (libFuzzer OOM at 2 GiB).  Each loop now
- * stops when an element made no progress, so the work is linear in the input
- * and the output is bounded by it (at most YAML_MAX_INDENT + a few bytes per
- * input byte).  Malformed JSON still converts as far as it is well formed,
- * as before. */
-static void json_to_yaml_r(const char **pp, TkStrBuf *ob, int indent) {
+ * stops when an element made no progress and *stop unwinds every enclosing
+ * frame, so no parent goes on to parse the bytes a child left behind.  The
+ * work is linear in the input and the output is bounded by it (at most
+ * YAML_MAX_INDENT + a few bytes per input byte).  An empty element on a comma
+ * (`[1,,2]`, `{"a":,"b":1}`) consumes the comma and converts as before. */
+static void json_to_yaml_r(const char **pp, TkStrBuf *ob, int indent,
+                           int *stop) {
     if (indent > YAML_MAX_INDENT) return;   /* 121.6: bound recursion depth */
     const char *p = json_skip_ws(*pp);
 
@@ -480,12 +482,13 @@ static void json_to_yaml_r(const char **pp, TkStrBuf *ob, int indent) {
             p = json_skip_ws(p);
             /* Value */
             const char *before = p;
-            json_to_yaml_r(&p, ob, indent + 2);
-            if (p == before) break;   /* 127.542: no progress -- stop */
+            json_to_yaml_r(&p, ob, indent + 2, stop);
+            /* 127.542: no progress (except on a comma) -- stop everything */
+            if (*stop || (p == before && *p != ',')) { *stop = 1; break; }
             p = json_skip_ws(p);
             if (*p == ',') p++;
         }
-        if (*p == '}') p++;
+        if (!*stop && *p == '}') p++;
         *pp = p;
         return;
     }
@@ -498,12 +501,13 @@ static void json_to_yaml_r(const char **pp, TkStrBuf *ob, int indent) {
             p = json_skip_ws(p);
             strbuf_appendf(ob, "\n%*s- ", indent, "");
             const char *before = p;
-            json_to_yaml_r(&p, ob, indent + 2);
-            if (p == before) break;   /* 127.542: no progress -- stop */
+            json_to_yaml_r(&p, ob, indent + 2, stop);
+            /* 127.542: no progress (except on a comma) -- stop everything */
+            if (*stop || (p == before && *p != ',')) { *stop = 1; break; }
             p = json_skip_ws(p);
             if (*p == ',') p++;
         }
-        if (*p == ']') p++;
+        if (!*stop && *p == ']') p++;
         *pp = p;
         return;
     }
@@ -532,7 +536,8 @@ const char *yaml_from_json(const char *json) {
     if (!json) return "";
     TkStrBuf ob = TK_STRBUF_INIT;
     const char *p = json;
-    json_to_yaml_r(&p, &ob, 0);
+    int stop = 0;
+    json_to_yaml_r(&p, &ob, 0, &stop);
     /* Trim the leading newline a top-level mapping starts with. */
     size_t skip = (!ob.oom && ob.len && ob.buf[0] == '\n') ? 1 : 0;
     return seal_buf(&ob, skip, "");

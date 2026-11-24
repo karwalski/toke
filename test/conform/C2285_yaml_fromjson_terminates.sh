@@ -14,18 +14,21 @@
 # appended "\n- " forever.  Any program calling yaml.fromjson on untrusted
 # text could be held at 100% CPU with unbounded memory by a few bytes.
 #
-# THE FIX: each loop in json_to_yaml_r stops when an element made no progress,
-# so every iteration consumes input: work is linear in the input and the
-# output at most a few hundred bytes per input byte.  What converted before
-# converts to exactly the same text.
+# THE FIX: each loop in json_to_yaml_r stops when an element made no progress
+# (an empty element on a comma still consumes the comma, as before) and the
+# stop unwinds every enclosing frame, so no parent re-parses the bytes a child
+# left behind.  Every iteration consumes input: work is linear in the input
+# and the output at most a few hundred bytes per input byte.  What converted
+# before converts to exactly the same text.
 #
 # WHAT IS ASSERTED (toke programs, each under a 20 s alarm):
 #   1. yaml.fromjson / yaml.tojson / yaml.dec+str of the fuzz artifact, of a
 #      sequence nested 400 deep (past the depth cap), of `{"b":[1,2@]}` and
 #      `[1@]`, and of a 60 KiB sequence of 30,000 elements ending in '@':
 #      each returns, with the expected output length, in < 5 s wall.
-#   2. controls that must convert exactly as before: `{"a":1,"b":[1,2]}`,
-#      `[1,[2,3],{"k":"v"}]`, `{}`, `[]`.
+#   2. controls that must convert exactly as before (text taken from base
+#      eca5062f): `{"a":1,"b":[1,2]}`, `[1,[2,3],{"k":"v"}]`, `{}`, `[]`, and
+#      the elided elements `[1,,2]`, `{"a":,"b":1}`, `[[1,,2],3]`.
 #
 # Negative control: C2285_STDLIB=<dir> builds against another tree's
 # src/stdlib (its ../../stdlib must hold the .tki files).  The v3.2.0 tree
@@ -98,7 +101,7 @@ run() {
 
 # ── 1. inputs that never returned ───────────────────────────────────────────
 run "fuzz artifact crash-yaml-oom-bcd1502b (35 bytes)" "${ART}" "in=35 fj=25 tj=45 k=-1"
-run "sequence nested 400 deep (past the depth cap)" "${DEEP}" "in=801 fj=214080 tj=2 k=-1"
+run "sequence nested 400 deep (past the depth cap)" "${DEEP}" "in=801 fj=66562 tj=2 k=-1"
 printf '{"b":[1,2@]}' > obj.json
 run "{\"b\":[1,2@]}" obj.json "in=12 fj=20 tj=18 k=-1"
 printf '[1@]' > seq.json
@@ -118,6 +121,12 @@ f=main():i64{
   io.println("--");
   io.println(yaml.fromjson("{}"));
   io.println(yaml.fromjson("[]"));
+  io.println("--");
+  io.println(yaml.fromjson("[1,,2]"));
+  io.println("--");
+  io.println(yaml.fromjson("{\"a\":,\"b\":1}"));
+  io.println("--");
+  io.println(yaml.fromjson("[[1,,2],3]"));
   <0
 };
 TOKE
@@ -134,14 +143,27 @@ b:
   k: v
 --
 {}
-[]'
+[]
+--
+- 1
+-
+- 2
+--
+a:
+b: 1
+--
+-
+  - 1
+  -
+  - 2
+- 3'
 if ! "${TKC}" --out c c.tk > c.log 2>&1; then
     fail "controls: compile"; head -8 c.log | sed 's/^/        /'
 else
     # (trailing blanks stripped: "b: " and "- " end in a space)
     got="$(perl -e 'alarm 20; exec @ARGV' ./c 2>&1 | sed 's/ *$//')"
     if [ "${got}" = "${WANT}" ]; then
-        pass "controls: well-formed objects, nested sequences, {} and [] convert unchanged"
+        pass "controls: well-formed objects, nested sequences, {}, [] and elided elements convert unchanged"
     else
         fail "controls: output differs"; printf '%s\n' "${got}" | sed 's/^/        /'
     fi

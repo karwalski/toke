@@ -202,10 +202,11 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   appended `"\n- "` for an element that consumed no input -- a byte that is no
   JSON value (`[1,2@]`) or any element nested past the 256-level depth cap
   (`[` x 400) -- and then saw the same byte again, forever, growing its output
-  without bound. Each loop now stops at an element that made no progress, so
-  the work is linear in the input and the output bounded by it. Well-formed
-  JSON converts to exactly the same text as before; malformed JSON still
-  converts as far as it is well formed. Test: C2285; the inputs are kept as
+  without bound. Each loop now stops at an element that made no progress
+  (other than an empty element on a comma, which consumes the comma) and the
+  whole conversion stops there, so the work is linear in the input and the
+  output bounded by it. Every input that returned before converts to exactly
+  the same text, including elided elements such as `[1,,2]`. Test: C2285; the inputs are kept as
   `test/fuzz/corpus-adversarial/yaml_flow_seq_no_progress_127542.json` and
   `yaml_deep_seq_past_cap_127542.json`, which `make fuzz-smoke` replays.
 - **`yaml.fromjson` no longer reads past the end of a document that stops
