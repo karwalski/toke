@@ -231,6 +231,13 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
 
 ### Build and CI gates
 
+- **`make fuzz-smoke` fails on an input that never returns, instead of hanging**
+  (127.545). Each replayed input now has `FUZZ_REPLAY_TIMEOUT` seconds (default 25,
+  `0` turns it off): the standalone driver arms an alarm per input and exits 70 with
+  `fuzz-replay: TIMEOUT after N s on <path>`, and libFuzzer gets `-timeout=`. Before,
+  the 127.542 and 127.543 inputs made the standalone replay run forever and the
+  libFuzzer replay take 20 minutes per input. C2287 checks it with a harness that
+  spins on one input.
 - **`make check-tk-parse`: every committed `.tk` outside `test/` parses** (131.142).
   131.52 found five that did not: the GitHub Linguist samples
   (`linguist-submission/samples/toke/`, underscored identifiers and `=` for `==`) and

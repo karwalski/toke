@@ -2594,6 +2594,10 @@ fuzz-120-22: fuzz-json fuzz-yaml fuzz-toml fuzz-toon fuzz-xml fuzz-template \
 # below hid the reason.  It is handed the seed FILES now, its "Executed"
 # lines are counted against the inputs (a replay that skips any input
 # fails), and a failure with no sanitizer line prints the output's tail.
+# 127.545: every replayed input is bounded by FUZZ_REPLAY_TIMEOUT seconds
+# (libFuzzer -timeout=, the standalone driver's alarm), so an input that
+# never returns fails the gate, naming the input, instead of hanging it.
+FUZZ_REPLAY_TIMEOUT ?= 25
 fuzz-smoke: fuzz-120-22
 	@echo "=== fuzz-smoke: replay seeds + adversarial inputs [$(FUZZ_ENGINE_R)] -- a replay, not fuzzing ==="
 	@fail=0; for t in $(FUZZ_TARGETS); do \
@@ -2602,17 +2606,17 @@ fuzz-smoke: fuzz-120-22
 	    || { echo "  FAIL $$t: no seeds in test/fuzz/seeds/$$t"; fail=1; continue; }; \
 	  adv=$$(ls test/fuzz/corpus-adversarial/$${t}_* 2>/dev/null); \
 	  if [ "$(FUZZ_ENGINE_R)" = libfuzzer ]; then \
-	    out=$$($$b -runs=0 test/fuzz/seeds/$$t/* $$adv 2>&1); rc=$$?; \
+	    out=$$($$b -runs=0 -timeout=$(FUZZ_REPLAY_TIMEOUT) test/fuzz/seeds/$$t/* $$adv 2>&1); rc=$$?; \
 	    ran=$$(printf '%s\n' "$$out" | grep -a -c '^Executed '); \
 	  else \
-	    out=$$($$b test/fuzz/seeds/$$t $$adv 2>&1); rc=$$?; ran=; \
+	    out=$$(FUZZ_REPLAY_TIMEOUT=$(FUZZ_REPLAY_TIMEOUT) $$b test/fuzz/seeds/$$t $$adv 2>&1); rc=$$?; ran=; \
 	  fi; \
 	  n=$$(ls test/fuzz/seeds/$$t | wc -l | tr -d ' '); a=$$(printf '%s\n' $$adv | grep -c . ); \
 	  if [ $$rc -eq 0 ] && [ -n "$$ran" ] && [ "$$ran" -ne $$((n + a)) ]; then \
 	    echo "  FAIL $$t: replayed $$ran of $$((n + a)) input(s)"; fail=1; \
 	  elif [ $$rc -eq 0 ]; then echo "  ok   $$t  ($$n seed(s), $$a adversarial)"; \
 	  else echo "  FAIL $$t (exit $$rc)"; \
-	    msg=$$(printf '%s\n' "$$out" | grep -a -E 'ERROR: |runtime error|SUMMARY|fuzz-replay' | head -6); \
+	    msg=$$(printf '%s\n' "$$out" | grep -a -E 'ERROR: |runtime error|SUMMARY|fuzz-replay|TIMEOUT' | head -6); \
 	    [ -n "$$msg" ] || msg=$$(printf '%s\n' "$$out" | tail -4); \
 	    printf '%s\n' "$$msg" | sed 's/^/      /'; fail=1; fi; \
 	done; \

@@ -56,7 +56,10 @@ under the harnesses' size caps and stays cheap for the fuzzer to mutate.
 > replayed through `<target>`'s harness, in `make ci` and CI's ci-gates job)
 > and the security nightly's `make fuzz-120-22-run`, which fuzzes each target
 > from its seeds plus its adversarial files.  Binaries are built under
-> `build/fuzz/`.
+> `build/fuzz/`.  Each replayed input is bounded by `FUZZ_REPLAY_TIMEOUT`
+> seconds (default 25; libFuzzer `-timeout=`, the standalone driver's alarm),
+> so an input that never returns fails fuzz-smoke with its path named instead
+> of hanging it (127.545).
 
 ```sh
 # Seed a target's in-memory corpus with the adversarial inputs:

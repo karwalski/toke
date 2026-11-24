@@ -17,6 +17,12 @@
  *   Exit 0 when every input was replayed; 1 on an unreadable argument or when
  *   no input at all was replayed (a run over nothing proves nothing).  A
  *   sanitizer finding aborts the process with the sanitizer's own report.
+ *
+ * Time bound (127.545): each input gets FUZZ_REPLAY_TIMEOUT seconds
+ * (default 25; 0 turns the bound off).  An input that has not returned by
+ * then ends the run with exit 70 and "fuzz-replay: TIMEOUT after N s on
+ * <path>" on stderr, so a non-termination regression (127.542, 127.543)
+ * fails make fuzz-smoke instead of hanging it.
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -25,11 +31,43 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size);
 
 static long replayed;
+
+/* 127.545: the input being replayed and the per-input bound. */
+static const char *volatile current_path;
+static unsigned replay_timeout = 25;
+
+static void put_err(const char *s)
+{
+    size_t n = strlen(s);
+    while (n > 0) {
+        ssize_t w = write(2, s, n);
+        if (w <= 0) return;
+        s += w; n -= (size_t)w;
+    }
+}
+
+static void on_alarm(int sig)
+{
+    (void)sig;
+    char num[24];
+    int i = (int)sizeof num - 1;
+    unsigned v = replay_timeout;
+    num[i] = '\0';
+    do { num[--i] = (char)('0' + v % 10); v /= 10; } while (v && i > 0);
+    put_err("fuzz-replay: TIMEOUT after ");
+    put_err(num + i);
+    put_err(" s on ");
+    put_err(current_path ? current_path : "(unknown input)");
+    put_err("\n");
+    _exit(70);
+}
 
 static int replay_file(const char *path)
 {
@@ -54,7 +92,11 @@ static int replay_file(const char *path)
     if (!exact) { free(buf); return 1; }
     memcpy(exact, buf, len);
     free(buf);
+    current_path = path;
+    if (replay_timeout) alarm(replay_timeout);
     LLVMFuzzerTestOneInput(exact, len);
+    if (replay_timeout) alarm(0);
+    current_path = NULL;
     free(exact);
     replayed++;
     return 0;
@@ -103,6 +145,22 @@ static int replay_dir(const char *dir)
 int main(int argc, char **argv)
 {
     int rc = 0;
+    const char *to = getenv("FUZZ_REPLAY_TIMEOUT");
+    if (to && *to) {
+        char *end;
+        unsigned long v = strtoul(to, &end, 10);
+        if (*end || v > 86400) {
+            fprintf(stderr, "fuzz-replay: FUZZ_REPLAY_TIMEOUT must be 0..86400 "
+                            "seconds, not '%s'\n", to);
+            return 1;
+        }
+        replay_timeout = (unsigned)v;
+    }
+    struct sigaction sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sa_handler = on_alarm;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGALRM, &sa, NULL);
     for (int i = 1; i < argc; i++) {
         struct stat st;
         if (stat(argv[i], &st) != 0) {
