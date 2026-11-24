@@ -358,11 +358,11 @@ the broker admits. In `ALLOW_ALL` nothing is applied.
 
 | Class (not whole) | Admitted by the kernel |
 |---|---|
-| `fs.read` | the scopes and everything beneath them, plus a read-only system baseline: the OS image and C library, time zones, resolver and CA files, and `/dev`. It holds no home or temporary directory. On macOS the working directory itself is admitted too, for `getcwd`. |
-| `fs.write` | the scopes, plus `/dev/null`, `/dev/zero` and `/dev/tty` |
-| `process.spawn` | the canonical command paths (on Linux, also the dynamic loader's directories) |
+| `fs.read` | the scopes and everything beneath them, plus a read-only system baseline: the OS image and C library, time zones, resolver and CA files, and `/dev`. It holds no home or temporary directory. On macOS the working directory and `/` themselves (their names, not beneath them) are admitted too, for `getcwd` and dyld. |
+| `fs.write` | the scopes, plus `/dev/null`, `/dev/zero` and `/dev/tty`, and the process's own standard output and error, which the broker admits with no grant (`/dev/stdout`, `/dev/stderr`): on macOS `/dev/fd`, on Linux the file behind descriptors 1 and 2 when they are open for writing |
+| `process.spawn` | the canonical command paths; a script's `#!` interpreter (and, for `#!/usr/bin/env NAME`, the file `NAME` resolves to on `PATH`); on Linux, also the dynamic loader's directories |
 | `net`, `listen:` / `connect:` | the scope's **port** only: hosts and CIDR blocks are not expressible, and on macOS a loopback scope is limited to loopback. A scope whose port is `*` leaves that direction unrestricted. |
-| `net` not granted | no bind and no IPv4/IPv6 connect. On Linux a seccomp filter also refuses IPv4/IPv6 sockets (UDP included) and `io_uring_setup`. |
+| `net` not granted | no bind and no IPv4/IPv6 connect. On Linux a seccomp filter also refuses IPv4/IPv6 sockets (UDP included) and `io_uring_setup`, on the 32-bit compat entry as well. A system call of any other architecture kills the process. |
 | `env.write` | nothing: it changes in-process memory |
 
 Mechanisms:
@@ -371,7 +371,9 @@ Mechanisms:
 - **Linux:** Landlock, for file-system access and execute, and for TCP bind and connect ports from ABI 4 (Linux 6.7). The seccomp filter is added when `net` is not granted.
 - **Elsewhere:** nothing.
 
-Children inherit the layer. Setting `TK_CAP_OS_SHOW=1` makes the binary print the
+Children inherit the layer. A granted child is refused any exec it makes of a
+command that is not granted, and reads of its own files outside `fs.read` and the
+baseline. Setting `TK_CAP_OS_SHOW=1` makes the binary print the
 generated profile or rules to stderr. The [138.44 design
 note](/docs/decisions/138.44-os-enforcement/) has the full rule set.
 
@@ -385,6 +387,9 @@ still enforces every grant. It is given when:
   directory, which the line names;
 - a scope cannot be carried to the kernel (for example, a control character in a
   path), so that access is not OS-restricted;
+- Landlock refuses a rule, so no Landlock rules are applied;
+- a granted command lies outside `fs.read` and the read baseline, so it could not
+  load under the OS layer (the line names it; add its install prefix to `fs.read`);
 - the seccomp filter is refused.
 
 One text line is printed, with control characters escaped. Under `TK_DIAG_JSON=1` one

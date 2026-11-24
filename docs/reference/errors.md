@@ -2023,6 +2023,10 @@ them. The program runs. The causes are:
 - an `fs.write` scope does not exist yet, so the rule went on its nearest existing
   directory, which the line names;
 - a scope cannot be carried to the kernel (a control character in a path);
+- Landlock refused a rule, so no Landlock rules were applied;
+- a granted command (or a script's interpreter) lies outside `fs.read` and the read
+  baseline. Its own files cannot be read under the OS layer, so it will not run until
+  its install prefix (for example `/opt/homebrew`) is added to `fs.read`;
 - the seccomp socket filter was refused or does not exist for the architecture.
 
 The program prints one line,

@@ -147,7 +147,11 @@ rules are never narrower than the grants. They narrow `net` to ports rather than
 hosts, and they add a read-only system baseline: the C library, time zones, resolver
 and CA files. Two things change for a program that opts in:
 
-- Child processes inherit the rules.
+- Child processes inherit the rules. A granted command runs, but anything it execs
+  on its own (a helper such as the macOS `git` shim's `xcrun`) is refused unless it
+  is granted too. Its own files must be readable: a command installed outside the
+  system (Homebrew, `/usr/local`) needs its install prefix in `fs_read`, and CAP004
+  names it at start-up. A granted script's `#!` interpreter is admitted automatically.
 - Where the kernel cannot carry a grant, the program prints a **CAP004** warning at
   start-up and runs with the broker alone for that grant.
 
