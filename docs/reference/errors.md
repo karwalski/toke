@@ -2009,6 +2009,34 @@ program exits 1 with one line, `CAP003: <flag> refused: <reason>`. With
 There is no `fix`: the right flag depends on what the launcher meant. Conformance:
 C1883, C1884.
 
+### CAP004
+
+**OS-level enforcement is partial** (story 138.44). This is a **warning**, not an
+error. It is printed at start-up, once per cause, and only by a binary built with
+`os_enforce = true` or `--cap-os-enforce`
+([the capability spec](/docs/spec/capabilities/) §3.1). It means the kernel could not
+be told some of the grants, so for those grants the in-process broker alone enforces
+them. The program runs. The causes are:
+
+- the platform has no OS layer, or the kernel has no Landlock (or has it disabled);
+- `sandbox_init` refused the profile;
+- Landlock has no TCP rules (ABI < 4) while `net` is scoped;
+- an `fs.write` scope does not exist yet, so the rule went on its nearest existing
+  directory, which the line names;
+- a scope cannot be carried to the kernel (a control character in a path);
+- Landlock refused a rule, so no Landlock rules were applied;
+- a granted command (or a script's interpreter) lies outside `fs.read` and the read
+  baseline. Its own files cannot be read under the OS layer, so it will not run until
+  its install prefix (for example `/opt/homebrew`) is added to `fs.read`;
+- the seccomp socket filter was refused or does not exist for the architecture.
+
+The program prints one line,
+`CAP004: OS-level enforcement (os_enforce) is partial: <reason>; the in-process broker still enforces every grant`,
+with control characters escaped. With `TK_DIAG_JSON=1` a JSON line follows, with
+`severity` `warning`, `layer` (`sandbox`, `landlock`, `seccomp`, `plan` or `none`)
+and `reason`. There is no `fix`: nothing in the source corrects a kernel's abilities.
+Conformance: C2230.
+
 ## Semantic Warnings (W2xxx / W3xxx / W5xxx / W8xxx)
 
 Non-fatal diagnostics from later stages.

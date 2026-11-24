@@ -38,6 +38,7 @@
 # A new entry still needs the same: a reason, raised in the same commit.
 src/stdlib/analytics.c 2      # c-owned: pivot's row keys (the frame's own malloc'd keys) and a snprintf'd local buffer
 src/stdlib/cache.c 5          # dead: nothing in the tree calls http_cache_* (linked with std.http, never reached)
+src/stdlib/cap_os.h 4         # never-toke (138.44): the OS layer's own profile and rule text (literals and canonical paths the broker built), in a C-built buffer, plus the start-up interpreter lookup (a baseline directory, a #! word read by C, the PATH environment string); included only into capabilities.c, which is also linked into tkc, and test_cap_os.c links it without the runtime heap tk_strhdr.h needs
 src/stdlib/capabilities.c 14   # never-toke / by-design (138.19): the broker's own scope texts (argv, baked constants), the canonical paths and hosts it builds in local buffers, and its flag table; norm_host and the scope parsers measure a host or scope once per acquisition and then copy or scan the same bytes. capabilities.c is also linked into tkc, which carries no sealed-string heap
 src/stdlib/chart.c 3          # never-toke: chart_set_theme / chart_set_legend / chart_set_tooltip are C-only (no glue, no toke binding)
 src/stdlib/chart_glue.c 1     # c-owned: measures chart_tojson's own malloc'd JSON before packing it into [byte]

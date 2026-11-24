@@ -125,6 +125,40 @@ malformed scope, or `--allow-all` on a binary built with grants) stops it before
 `main` with `CAP003: <flag> refused: <reason>`, and a JSON line with no `fix`. See
 [the capability spec](/docs/spec/capabilities/) §3 for when each `fix` is given.
 
+## OS-level enforcement (opt-in, `os_enforce`)
+
+The broker checks grants inside the standard library. Code that does not go through
+the standard library is not checked by it: a user `extern` C function, or an FFI
+call. To have the operating system enforce the grants as well, build with:
+
+```toml
+[capabilities]
+fs_read    = ["./content"]
+os_enforce = true          # or: tkc --cap-os-enforce
+```
+
+The binary then also asks the kernel to refuse what its grants do not admit. On
+macOS it uses a sandbox profile (`sandbox_init`). On Linux it uses Landlock, plus a
+seccomp filter when `net` is not granted. So `fopen("~/.ssh/id_ed25519")` from
+native code fails as well.
+
+The broker still answers first, and its CAP001 and CAP002 do not change. The kernel
+rules are never narrower than the grants. They narrow `net` to ports rather than
+hosts, and they add a read-only system baseline: the C library, time zones, resolver
+and CA files. Two things change for a program that opts in:
+
+- Child processes inherit the rules. A granted command runs, but anything it execs
+  on its own (a helper such as the macOS `git` shim's `xcrun`) is refused unless it
+  is granted too. Its own files must be readable: a command installed outside the
+  system (Homebrew, `/usr/local`) needs its install prefix in `fs_read`, and CAP004
+  names it at start-up. A granted script's `#!` interpreter is admitted automatically.
+- Where the kernel cannot carry a grant, the program prints a **CAP004** warning at
+  start-up and runs with the broker alone for that grant.
+
+`TK_CAP_OS_SHOW=1` prints the generated rules. Without `os_enforce` nothing
+changes. See [the capability spec](/docs/spec/capabilities/) §3.1 and [the 138.44
+design note](/docs/decisions/138.44-os-enforcement/).
+
 ## Relationship to the other controls
 
 Capabilities (ADR-0010) are one layer of toke's correct/secure-by-default program:

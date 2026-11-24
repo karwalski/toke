@@ -110,6 +110,7 @@ tkc [flags] <source-file> [source-file ...]
 | `--allow-env[=KEY,PREFIX*,...] --allow-run[=CMD,...]` | Grant env write / spawn |
 | `--allow-all` | Grant every capability |
 | `--cap-enforce` | Accepted for compatibility; enforcement is the default |
+| `--cap-os-enforce` | Also have the OS enforce the grants (macOS sandbox, Linux Landlock/seccomp); tkc.toml: os_enforce = true |
 
 ## Packages (ADR-0004, docs/reference/package-manifest.md)
 

@@ -8,7 +8,8 @@ order: 11
 **Status:** Normative [N]; implemented (Epic 124.4a–d, 2026-07-06); deny-by-default since the
 124.4g flip (§4); scoped grants and run-time narrowing since story 138.19 (2026-11-15, owner
 answer register 3.4: decisions D1–D4 of
-[the 138.19 design note](/docs/decisions/138.19-scoped-capability-grants/)). ADR:
+[the 138.19 design note](/docs/decisions/138.19-scoped-capability-grants/)); opt-in OS-level
+enforcement behind the broker since story 138.44 (§3.1, decision D5). ADR:
 [ADR-0010](/docs/decisions/ADR-0010/).
 
 toke compiles to native code with no language-level sandbox. Without a capability
@@ -222,7 +223,8 @@ env_write     = ["TZ"]
 ```
 
 Keys: `fs_read`/`read`, `fs_write`/`write`, `net`, `env_write`/`env`,
-`process_spawn`/`run`, `all`, `runtime` and `enforce` (below). A class value is
+`process_spawn`/`run`, `all`, `runtime`, `enforce` (below) and `os_enforce`
+(`true`/`false`; §3.1). A class value is
 `true`/`1` (the whole class), `false`/`0` (not granted), a **single-line array of
 quoted strings** (the scopes; `[]` grants nothing; no nesting, no trailing comma; a
 double-quoted element takes no escapes), or a quoted string (below). Anything else
@@ -269,7 +271,9 @@ line per scope), and the `--companion` record lists each class with its scopes.
 At startup `tk_cap_init` (called from `tk_runtime_init`) computes the grants and
 mode. Each gated sink calls its scoped gate; a denied call raises **CAP001** or
 **CAP002** and exits non-zero *before* the syscall (fail-closed). A run-time grant
-flag the broker cannot honour raises **CAP003** at start-up.
+flag the broker cannot honour raises **CAP003** at start-up. A binary built with
+`os_enforce = true` also has the kernel enforce the grants (§3.1); where it cannot,
+**CAP004**, a warning, says so at start-up.
 
 **CAP001** — the class is not granted at all (text and JSON unchanged by 138.19;
 since 138.53 the `fix` names the manifest key, `fs_write`, not the class name
@@ -337,6 +341,65 @@ CAP003: --allow-net=api.example.com refused: 'api.example.com' is not a net scop
 {"diagnostic_id":"CAP003","severity":"error","stage":"runtime","flag":"--allow-net=api.example.com","reason":"'api.example.com' is not a net scope: a net scope is connect:HOST[:PORT] or listen:ADDR:PORT"}
 ```
 
+### 3.1 OS-level enforcement (138.44) [I]
+
+**Opt-in.** `os_enforce = true` in `[capabilities]` or `tkc --cap-os-enforce` bakes
+`@__tk_cap_baked_os = constant i32 1`, and `--show-limits` prints `cap-os = 1`. Like
+`enforce`, the key declares no grant set (§2). A binary built without it has the
+weak default `0`: its IR is unchanged, and nothing below runs.
+
+**What it does.** At the end of `tk_cap_init`, once the effective grants are known
+and before `main` runs, the runtime asks the kernel to refuse what the grants do not
+admit. That way a call that never reaches a gate is still denied: a user `extern` C
+function, an FFI call, or a sink a defect left ungated. A gated call is still
+answered by the broker first, exactly as §3 says, so CAP001 and CAP002 do not change.
+The OS layer admits a **superset** of what the broker admits: it never refuses what
+the broker admits. In `ALLOW_ALL` nothing is applied.
+
+| Class (not whole) | Admitted by the kernel |
+|---|---|
+| `fs.read` | the scopes and everything beneath them, plus a read-only system baseline: the OS image and C library, time zones, resolver and CA files, and `/dev`. It holds no home or temporary directory. On macOS the working directory and `/` themselves (their names, not beneath them) are admitted too, for `getcwd` and dyld. |
+| `fs.write` | the scopes, plus `/dev/null`, `/dev/zero` and `/dev/tty`, and the process's own standard output and error, which the broker admits with no grant (`/dev/stdout`, `/dev/stderr`): on macOS `/dev/fd`, on Linux the file behind descriptors 1 and 2 when they are open for writing |
+| `process.spawn` | the canonical command paths; a script's `#!` interpreter (and, for `#!/usr/bin/env NAME`, the file `NAME` resolves to on `PATH`); on Linux, also the dynamic loader's directories |
+| `net`, `listen:` / `connect:` | the scope's **port** only: hosts and CIDR blocks are not expressible, and on macOS a loopback scope is limited to loopback. A scope whose port is `*` leaves that direction unrestricted. |
+| `net` not granted | no bind and no IPv4/IPv6 connect. On Linux a seccomp filter also refuses IPv4/IPv6 sockets (UDP included) and `io_uring_setup`, on the 32-bit compat entry as well. A system call of any other architecture kills the process. |
+| `env.write` | nothing: it changes in-process memory |
+
+Mechanisms:
+
+- **macOS:** `sandbox_init(3)` with an SBPL profile generated from the grants. No entitlement is needed.
+- **Linux:** Landlock, for file-system access and execute, and for TCP bind and connect ports from ABI 4 (Linux 6.7). The seccomp filter is added when `net` is not granted.
+- **Elsewhere:** nothing.
+
+Children inherit the layer. A granted child is refused any exec it makes of a
+command that is not granted, and reads of its own files outside `fs.read` and the
+baseline. Setting `TK_CAP_OS_SHOW=1` makes the binary print the
+generated profile or rules to stderr. The [138.44 design
+note](/docs/decisions/138.44-os-enforcement/) has the full rule set.
+
+**CAP004** is a warning at start-up, once per cause. The program runs, and the broker
+still enforces every grant. It is given when:
+
+- the platform has no OS layer, or the kernel lacks one;
+- `sandbox_init` refuses the profile;
+- Landlock has no TCP rules while `net` is scoped;
+- an `fs.write` scope does not exist yet, so the rule goes on its nearest existing
+  directory, which the line names;
+- a scope cannot be carried to the kernel (for example, a control character in a
+  path), so that access is not OS-restricted;
+- Landlock refuses a rule, so no Landlock rules are applied;
+- a granted command lies outside `fs.read` and the read baseline, so it could not
+  load under the OS layer (the line names it; add its install prefix to `fs.read`);
+- the seccomp filter is refused.
+
+One text line is printed, with control characters escaped. Under `TK_DIAG_JSON=1` one
+JSON line follows, with `layer` (`sandbox`, `landlock`, `seccomp`, `plan` or `none`)
+and `reason`, and no `fix`:
+
+```
+CAP004: OS-level enforcement (os_enforce) is partial: this kernel has no Landlock (Linux 5.13 or later); file-system, execute and TCP scopes are enforced by the broker only; the in-process broker still enforces every grant
+```
+
 ## 4. Modes & the transition [I]
 
 The broker has two modes:
@@ -365,10 +428,12 @@ compile with `--allow-all` so that measurement is unaffected.
 
 **Out of scope** — not defended:
 
-- **Native code.** A user `extern` C function and any C FFI call the program makes
-  do not go through the broker. Scoped grants are a **policy layer in the toke
-  standard library**, not an OS sandbox; OS-level enforcement (Landlock, seccomp,
-  `sandbox-exec`) is story 138.44.
+- **Native code**, unless the binary opts in to OS-level enforcement (§3.1). A user
+  `extern` C function and any C FFI call the program makes do not go through the
+  broker. Scoped grants are a **policy layer in the toke standard library**, not an
+  OS sandbox. With `os_enforce = true`, the kernel also refuses native code's file,
+  exec and TCP-port access outside the grants. It cannot refuse native code's
+  access to a granted port on another host, or an `env.write`.
 - Memory-safety bugs in the program or runtime that let code skip the gate.
 - The check-then-open race (§1.3).
 - DNS answers: a granted name may resolve anywhere.
@@ -396,6 +461,8 @@ compile with `--allow-all` so that measurement is unaffected.
 
 - [ADR-0010 — Ambient authority and the toke capability model](/docs/decisions/ADR-0010/)
 - [138.19 — Scoped capability grants](/docs/decisions/138.19-scoped-capability-grants/) (design note, accepted)
+- [138.44 — OS-level enforcement of capability grants](/docs/decisions/138.44-os-enforcement/) (design note, implemented, opt-in)
 - [memory-model.md §6.6/§6.7](/docs/spec/memory-model/) — spatial safety, injection resistance
 - Implementation: `src/stdlib/capabilities.{h,c}`, `src/config.c`, `src/main.c`, `src/llvm.c`
-- Conformance: C470 (scoped gates), C1880–C1886, D615–D616
+- Implementation (OS layer, 138.44): `src/stdlib/cap_os.h`
+- Conformance: C470 (scoped gates), C1880–C1886, D615–D616, C2230 (OS layer)
