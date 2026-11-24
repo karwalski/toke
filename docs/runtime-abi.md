@@ -1619,7 +1619,7 @@ variable set it took 1.052 s: each `malloc` and `free` pays for the hook and a
 | Field | Meaning |
 |---|---|
 | `v` | Format version. A field is only ever added at the end, and `v` goes up when one is. |
-| `pid` | The reporting process. A forked child (the http server's workers) that exits through `exit()` reports too, under its own pid. |
+| `pid` | The reporting process. A forked child that exits through `exit()` reports too, under its own pid, and its counters include those it inherited from its parent. The http server's workers leave through `_exit()` and print nothing. |
 | `sealed_bytes` | Bytes handed out of the sealed string heap (§3.1), headers and 16-byte rounding included: `tks_top`, which the heap keeps anyway. It goes past the reservation only after the reservation is exhausted, because each failed bump still adds. 0 without the heap. |
 | `sealed_committed` | Sealed-heap bytes committed read/write, in 64 MiB chunks. An upper bound on what the heap holds resident. |
 | `region_released_bytes` | Always 0. A region (ADR-0016) will release bytes here once slice (ii) lands. |
