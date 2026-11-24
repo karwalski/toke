@@ -478,6 +478,7 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
   line and exits `1`, and under `TK_MEM_STATS=1` prints the report once, like
   `os.exit(0)`. A non-zero status is unchanged. Survey of the other exit paths
   in `docs/stdlib/process.md`. Test: C2270.
+- **`os.exit(N)` and `process.exit(N)` whose low 8 bits are 0 (`256`, `512`, `-256`, ...) after a recorded failure exit `1`** with the `DIAGNOSTIC: kind=exit_status status=1` line, as `main` returning `256` does (127.536). Both checked for a status of exactly `0`, then `_exit()` truncated `256` to `0`, so a failed `test.eq` followed by `os.exit(256)` exited `0` with no line (also on v3.2.0). Both paths now share one helper, `tk_exitfail_before_exit` in `src/stdlib/tk_exitfail.h`, applying main's rule. With no recorded failure such a status still exits `0`, as `main` returning `256` does; a status with non-zero low bits is unchanged. Conformance: C2280.
 
 ### Added — runtime: `TK_MEM_STATS=1` allocation report at exit (127.529)
 

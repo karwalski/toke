@@ -169,9 +169,10 @@ int64_t tk_os_getpid(void) {
 int64_t tk_os_exit(int64_t status) {
     /* 127.231: os.exit is _exit() and skips atexit handlers, so a recorded
      * failure (a failed test assertion, a server that did not start) would
-     * be lost by os.exit(0).  tk_exitfail_atexit() returns when there is
-     * none; otherwise it reports and exits 1. */
-    if (status == 0) tk_exitfail_atexit();
+     * be lost by os.exit(0).  tk_exitfail_before_exit() does nothing when
+     * there is none; otherwise, for a status whose low 8 bits are 0 (0, 256,
+     * ...; 127.536), it reports and exits 1. */
+    tk_exitfail_before_exit((long long)status);
     if (tk_exit_report) tk_exit_report();   /* 127.529: TK_MEM_STATS */
     _exit((int)status);
     return 0; /* unreachable */
