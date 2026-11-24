@@ -1,0 +1,14 @@
+id: D774
+series: D
+description: "127.527: an {arena} block takes one optional trailing ';', as an if or lp block does; with or without it the program checks clean (was E2002)"
+input: |
+  m=test;
+  f=main():i64{
+    {arena let x=1;x};
+    {arena let y=2;y}
+    if(true){};
+    <1
+  };
+expected_exit_code: 0
+expected_error_codes: []
+expected_absent_codes: ["E2002", "E2003"]

@@ -1,0 +1,14 @@
+id: D773
+series: D
+description: "127.526: a local binding that shadows a module-level mut is the assignment's target inside {arena}, so a str stored to it is not E5001"
+input: |
+  m=test;
+  let g=mut."";
+  f=main():i64{
+    let g=mut."outer";
+    {arena g="inner"}
+    <0
+  };
+expected_exit_code: 0
+expected_error_codes: []
+expected_absent_codes: ["E5001"]

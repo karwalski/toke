@@ -1,0 +1,18 @@
+id: D772
+series: D
+description: "127.526: inside an {arena} block, a scalar assigned to a module-level mut and a str assigned to an outer local are not E5001 (memory-model.md 2.4: a scalar is never allocated; outer locals are the {arena} ADR's open question)"
+input: |
+  m=test;
+  let n=mut.0;
+  f=main():i64{
+    let s=mut."";
+    {arena
+      let t="a\(1)";
+      s=t;
+      n=n+1
+    }
+    <n
+  };
+expected_exit_code: 0
+expected_error_codes: []
+expected_absent_codes: ["E5001"]

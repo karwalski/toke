@@ -32,7 +32,7 @@ retspec: type (ws "!" ws type)?
 block: "{" ws stmts? "}"
 stmts: (item ws)* simple ws | (item ws)+
 stmts_p: simple_p ws | item_p ws stmts?
-item: simple ws ";" | compound (ws ";")? | arena
+item: simple ws ";" | compound (ws ";")? | arena (ws ";")?
 item_p: simple_p ws ";"
 simple: letstmt
     | assign

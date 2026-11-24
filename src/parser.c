@@ -1570,6 +1570,8 @@ static Node *parse_stmt(Parser *p) {
             adv(p);adv(p);Node *n=mk(p,NODE_ARENA_STMT,t);
             ch(p,n,parse_stmt_list(p,t));
             if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");
+            /* 127.527: one optional trailing ';', as after an if or lp block. */
+            if(peek(p)==TK_SEMICOLON) adv(p);
             return n;}
         eerr_got(p,E2002,t,"unexpected token at statement level");sync(p);return NULL;
     case TK_IDENT:

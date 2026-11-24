@@ -726,6 +726,24 @@ static int lookup_bind_depth(const Ctx *cx, const char *name, int name_len) {
 }
 
 /*
+ * tc_region_bound — 1 when a value of type t is heap-allocated, so that a
+ * store of it out of an {arena} block is an escape (E5001, 127.526): str,
+ * array, map, struct or sum, closure, or an error union whose value is one
+ * of those.  Scalars, void, pointers and unknown types are not.
+ */
+static int tc_region_bound(const Type *t) {
+    if (!t) return 0;
+    switch (t->kind) {
+    case TY_STR: case TY_ARRAY: case TY_MAP: case TY_STRUCT: case TY_FUNC:
+        return 1;
+    case TY_ERROR_TYPE:
+        return tc_region_bound(t->elem);
+    default:
+        return 0;
+    }
+}
+
+/*
  * is_param — return 1 if the identifier name matches a parameter of the
  * current function.  Parameters are always safe to return (caller owns them).
  */
@@ -9037,6 +9055,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
          * enclosing function; its binders are searched from the module
          * root, where an earlier module-level `let` is found lexically. */
         const Node *asc=cx->fn_node?cx->fn_node:cx->root;
+        int arena_global=0;   /* 127.526: target is a module-level `mut`, inside {arena} */
         if (node->child_count>0&&node->children[0]->kind==NODE_IDENT&&asc) {
             char nb[256]; TOKSTR(nb,cx->src,node->children[0]);
             int nlen=(int)strlen(nb);
@@ -9132,6 +9151,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     }
                     return mk_type(A,TY_VOID);
                 }
+                if (md&&md->kind==DECL_MUT&&cx->env->arena_depth>0) arena_global=1;
             }
             if (immutable) {
                 if (tc_can_emit(cx)) {
@@ -9206,6 +9226,25 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             &&!lit_narrows(cx->src,node->children[1],lhs)) {       /* 127.230 (4) */
             char fix[128]; snprintf(fix,sizeof(fix),"cast RHS to %s using 'as'",type_name(lhs));
             emit_mm(cx,node,lhs,rhs,cast_fix_certain(rhs,lhs)?fix:NULL);
+        }
+        /* 127.526: E5001 (memory-model.md §2.4).  Inside an {arena} block,
+         * at any depth, a value of a heap type (str, array, map, struct or
+         * sum, closure, or an error union whose value is one) assigned to a
+         * module-level `mut` binding outlives the block.  A scalar is
+         * never allocated, so assigning one is not an escape, and a store
+         * to an outer local is not checked: which of those the {arena} ADR
+         * (127.525) rejects or copies out is its open question.  No `fix`:
+         * the repair (a local, a copy, or moving the store out of the
+         * block) depends on the program. */
+        else if (arena_global&&tc_region_bound(rhs)&&tc_can_emit(cx)) {
+            char nb[256]; TOKSTR(nb,cx->src,node->children[0]);
+            char msg[384];
+            snprintf(msg,sizeof msg,
+                "value escapes arena scope: a %s assigned inside an {arena} block to module-level '%s' outlives the block",
+                type_name(rhs),nb);
+            diag_emit(DIAG_ERROR,E5001,node->start,node->line,node->col,msg,
+                "expected","a scalar, or a binding declared inside the block","got",type_name(rhs),
+                (const char*)NULL);
         }
         return mk_type(A,TY_VOID);
     }
@@ -9639,9 +9678,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      * is a compile-time error (E5001).
      *
      * Tracking is done via cx->env->arena_depth, which is incremented
-     * on entry and decremented on exit.  Inside the block, any
-     * NODE_ASSIGN_STMT whose LHS identifier resolves to a module-scope
-     * declaration triggers E5001.
+     * on entry and decremented on exit.  Inside the block, at any depth,
+     * a NODE_ASSIGN_STMT whose LHS resolves to a module-level `mut`
+     * binding and whose value has a heap type triggers E5001
+     * (memory-model.md §2.4; see NODE_ASSIGN_STMT, 127.526).
      *
      * All child statements are recursively inferred for normal type
      * checking.  Returns TY_VOID.
@@ -9650,23 +9690,12 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         int saved_bc=cx->bind_count;   /* 137.6: see NODE_IF_STMT */
         cx->env->arena_depth++;
         cx->scope_depth++;
-        for (int i=0;i<node->child_count;i++) {
-            const Node *ch=node->children[i];
-            if (ch&&ch->kind==NODE_ASSIGN_STMT&&ch->child_count>0) {
-                const Node *ln=ch->children[0];
-                if (ln&&ln->kind==NODE_IDENT) {
-                    char nb[128]; TOKSTR(nb,cx->src,ln);
-                    Decl *d=tc_lookup(cx->env->names->module_scope,nb,(int)strlen(nb));
-                    if (d&&d->def_node) {
-                        if (tc_can_emit(cx))
-                            diag_emit(DIAG_ERROR,E5001,ch->start,ch->line,ch->col,
-                                "value escapes arena scope: cannot assign arena-allocated value to outer variable",
-                                "fix",(const char*)NULL);
-                    }
-                }
-            }
-            infer(cx,ch);
-        }
+        /* 127.526: the block's one child is its NODE_STMT_LIST.  The old
+         * loop looked for assignments among the children themselves, so it
+         * never saw one and E5001 was never emitted; the check now sits in
+         * NODE_ASSIGN_STMT, which sees every statement of the body at any
+         * depth while arena_depth > 0. */
+        for (int i=0;i<node->child_count;i++) infer(cx,node->children[i]);
         cx->scope_depth--;
         cx->env->arena_depth--;
         cx->bind_count=saved_bc;

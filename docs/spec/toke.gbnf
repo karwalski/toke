@@ -34,7 +34,7 @@
 #   * declaration order m= i= t= consts let-globals f=, one `;` between
 #     declarations (optional after the last);
 #   * `;` ends every simple statement except the last in a block; `if`/`lp`
-#     take one optional `;`; `{arena ...}` takes none;
+#     and `{arena ...}` take one optional `;` (127.527);
 #   * comparisons do not chain (`a<b<c` is rejected);
 #   * `if` and `mt` are whole expressions, never operands;
 #   * a `mt` scrutinee may not end in a bare type reference (`$t{` would open
@@ -61,7 +61,7 @@ retspec     ::= type (ws "!" ws type)?
 block       ::= "{" ws stmts? "}"
 stmts       ::= (item ws)* simple ws | (item ws)+
 stmts-p     ::= simple-p ws | item-p ws stmts?
-item        ::= simple ws ";" | compound (ws ";")? | arena
+item        ::= simple ws ";" | compound (ws ";")? | arena (ws ";")?
 item-p      ::= simple-p ws ";"
 simple      ::= letstmt | assign | ret | "br" | scope | exprstmt
 simple-p    ::= "<" (ws expr)? | orx-p

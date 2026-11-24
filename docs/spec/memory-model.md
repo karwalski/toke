@@ -29,7 +29,7 @@ An error value is boxed in a per-thread buffer that is reused (127.109). A strin
 
 ### 1.2 The `{arena}` Block
 
-`{arena ... }` is a statement whose body is a statement list. It is parsed and type-checked, and the checker reserves E5001 for a value that escapes it (§2.4). **It does not release memory.** Its body runs as any other block does, and the values made in it live under the same rules as values made anywhere else (§1.3).
+`{arena ... }` is a statement whose body is a statement list. It is parsed and type-checked, and the checker reports E5001 for a value that escapes it under the rule of §2.4. **It does not release memory.** Its body runs as any other block does, and the values made in it live under the same rules as values made anywhere else (§1.3).
 
 What `{arena}` will release, and which stores out of it are rejected or copied, is decided by the ADR of story 127.525. A program that uses `{arena}` today shall not depend on memory being released at the block's exit. A program also should not let a value made in the block escape it (§2.4), because such a program may be rejected or behave differently once the ADR is implemented.
 
@@ -85,7 +85,9 @@ Array copy-on-write (ADR-0006) preserves value semantics: a mutation of an array
 
 ### 2.4 Escape From an `{arena}` Block
 
-E5001 is reserved for a value that escapes an `{arena}` block. As shipped, the checker's rule is narrow: inside an `{arena}` block, an assignment to a name declared at module scope is E5001. No other store, return or capture is rejected, and nothing outside an `{arena}` block is E5001. The shipped checker does not yet apply even this rule: it inspects the block's statement list as one node, so it never sees the assignment, and E5001 is not emitted (story 127.526). Because `{arena}` releases nothing (§1.2), no escape leaves a dangling reference today.
+E5001 is reserved for a value that escapes an `{arena}` block. As shipped, the checker's rule is narrow: inside an `{arena}` block, at any depth (in a nested `if` or `lp` body as well), assigning a value of a heap type (`str`, an array, a map, a struct or sum, a closure, or an error union whose value is one of these) to a module-level `mut` binding is E5001. The checker applies the rule when it knows the value's type; a value whose type it leaves unresolved is not rejected. A scalar (an integer, a float or a `bool`) is never allocated, so assigning one is not an escape. No other store, return or capture is rejected: an assignment to a binding of the enclosing function is accepted, and nothing outside an `{arena}` block is E5001. A module constant or a module-level immutable `let` cannot be assigned at all (E4070). Because `{arena}` releases nothing (§1.2), no escape leaves a dangling reference today.
+
+Until story 127.526 (2026-11-24) the checker inspected the block's statement list as one node, so it never saw an assignment and E5001 was never emitted. The rule this section stated before 127.526, any assignment to a module-scope name, also rejected scalars, which never escape; the shipped rule is the part of it that matches the escape route the `{arena}` ADR proposes to reject (ADR-0016 D4, route E1).
 
 The full escape rule, and whether an escape is rejected or copied out, is decided by the ADR of story 127.525 together with the release semantics of `{arena}`. A value bound in a nested block and returned from it is not an escape and is not E5001.
 

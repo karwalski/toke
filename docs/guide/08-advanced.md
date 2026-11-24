@@ -120,7 +120,7 @@ Because nothing is released, every temporary string, array or struct a loop make
 
 ### Arena safety
 
-An assignment, inside an `{arena}` block, to a name declared at module scope is reserved as compile error E5001 (memory model §2.4). The checker does not emit it yet (story 127.526), and since the block releases nothing, no such program reads freed memory today.
+Inside an `{arena}` block, assigning a string, array, map, struct or closure to a module-level `mut` binding is compile error E5001 (memory model §2.4). Assigning a number or a `bool` is allowed, and so is writing to the function's own outer bindings, as `result` is above. Since the block releases nothing, no program reads freed memory today.
 
 ## Module versioning (future)
 
