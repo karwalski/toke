@@ -24,7 +24,12 @@
 #      tk_cap_require_* returns at once): without os_enforce file.read /
 #      file.write / process.spawn / net.listen / http.geturl all reach the OS
 #      (the bypass is real); with it each is refused by the kernel outside
-#      the grants and still works inside them
+#      the grants and still works inside them; 2o-2t: a granted child
+#      (echo, uname, a #!/bin/sh script) RUNS TO COMPLETION and exits 0
+#      under the inherited OS layer, as it does without it (a child that is
+#      merely spawned and then killed by the loader is not a pass); 2u-2w:
+#      the own standard streams (/dev/stderr, /dev/stdout), which the broker
+#      admits with no grant, still open under the OS layer (files, a pipe)
 #   3. the broker still answers first: CAP002 for an fs read outside the
 #      scope, byte-for-byte the same text with and without os_enforce
 #   4. without os_enforce nothing changes: the IR has no @__tk_cap_baked_os
@@ -38,6 +43,8 @@
 #      --show-limits prints cap-os; the --companion record says so
 #   8. TK_CAP_OS_SHOW prints the generated rules (macOS profile / Linux
 #      Landlock rules) with the scopes in them
+#   9. CAP004 names a granted command whose own files lie outside fs.read
+#      and the read baseline (it could not load under the OS layer)
 # On Linux the kernel cases need Landlock (net: ABI 4); a kernel without it
 # prints CAP004 and those cases are named skips.  Elsewhere, all are skips.
 #
@@ -80,6 +87,7 @@ i=file:std.file;
 i=net:std.net;
 i=http:std.http;
 i=process:std.process;
+i=log:std.log;
 f=fopen(p:$str;m:$str):i64;
 f=main():i64{
   let op=mt args.get(1) {$ok:v v;$err:e ""};
@@ -104,6 +112,15 @@ f=main():i64{
     let r=mt process.spawn(@(p)) {$ok:h 1;$err:e 2};
     io.println("spawn-done \(r)");
   }el{};
+  if(op=="spawnwait"){
+    let a=mt args.get(3) {$ok:v v;$err:e ""};
+    let r=mt process.spawn(@(p;a)) {$ok:h process.wait(h);$err:e 0-999};
+    io.println("wait-done \(r)");
+  }el{};
+  if(op=="ownlog"){
+    let r=log.openaccess("/dev/stderr";0;0;0)+log.openaccess("/dev/stdout";0;0;0);
+    io.println("ownlog-done \(r)");
+  }el{};
   if(op=="listen"){
     let l=net.listen(p);
     io.println("listen-done \(l>0)");
@@ -117,13 +134,14 @@ f=main():i64{
 EOF
 D="${WORK}/data"; O="${WORK}/out"; mkdir -p "${D}" "${O}"
 echo a >"${D}/in.txt"; echo s >"${WORK}/secret.txt"
+printf '#!/bin/sh\nexit 0\n' >"${D}/run.sh"; chmod +x "${D}/run.sh"   # a granted script: its #! interpreter must exec too
 ECHO="$(type -P echo)"; [ -x "${ECHO}" ] || ECHO=/bin/echo   # the file a bare `echo` grant pins
 NOTGRANTED=/usr/bin/true; [ -x "${NOTGRANTED}" ] || NOTGRANTED=/bin/true
 
 grants() {   # the shared [capabilities] grant lines
     printf 'fs_read = ["%s"]\nfs_write = ["%s"]\n' "${D}" "${O}"
     printf 'net = ["listen:127.0.0.1:%s", "connect:127.0.0.1:%s"]\n' "${P_LISTEN_OK}" "${P_CONNECT_OK}"
-    printf 'process_spawn = ["echo"]\n'
+    printf 'process_spawn = ["echo", "uname", "%s/run.sh"]\n' "${D}"
 }
 { printf '[capabilities]\n'; grants; printf 'os_enforce = true\n'; } >"${WORK}/os.toml"
 { printf '[capabilities]\n'; grants; } >"${WORK}/plain.toml"
@@ -215,8 +233,14 @@ if [ "${B_NBOS}" -eq 1 ] && [ "${KFS}" -eq 1 ]; then
     expect_out "2h broker removed, os_enforce: file.write inside the scope" "write-done 1" "${WORK}/nbos" write "${O}/w.txt"
     expect_out "2i broker removed, os_enforce: an ungranted command is refused" "spawn-done 2" "${WORK}/nbos" spawn "${NOTGRANTED}"
     expect_out "2j broker removed, os_enforce: the granted command spawns" "spawn-done 1" "${WORK}/nbos" spawn echo
+    # 2o-2q: a granted child must RUN TO COMPLETION under the inherited OS
+    # layer (dyld / ld.so load it before main), not merely be spawned
+    expect_out "2o os_enforce: granted echo runs and exits 0" "wait-done 0" "${WORK}/os" spawnwait echo hi
+    expect_out "2p os_enforce: granted uname (a /usr/bin tool) runs and exits 0" "wait-done 0" "${WORK}/os" spawnwait uname -s
+    expect_out "2q os_enforce: a granted #!/bin/sh script runs and exits 0 (its interpreter may exec)" "wait-done 0" "${WORK}/os" spawnwait "${D}/run.sh" x
+    expect_out "2r broker removed, os_enforce: granted echo runs and exits 0" "wait-done 0" "${WORK}/nbos" spawnwait echo hi
 elif [ "${B_NBOS}" -eq 1 ]; then
-    skip "2e-2j need the kernel layer (${OSK})"
+    skip "2e-2j, 2o-2r need the kernel layer (${OSK})"
 fi
 if [ "${B_NBOS}" -eq 1 ] && [ "${KNET}" -eq 1 ]; then
     expect_out "2k broker removed, os_enforce: listen on an ungranted port is refused" "listen-done false" "${WORK}/nbos" listen "127.0.0.1:${P_LISTEN_NO}"
@@ -242,6 +266,21 @@ if [ "${B_NBOS}" -eq 1 ] && [ "${KNET}" -eq 1 ]; then
     fi
 elif [ "${B_NBOS}" -eq 1 ]; then
     skip "2k-2n need kernel TCP rules (${OSK})"
+fi
+
+# 2u-2w: the process's own standard streams need no grant (the broker:
+# log_glue.c); the OS layer must not refuse them, whether stderr/stdout are
+# regular files outside fs.write (run redirects both to ${WORK}) or a pipe
+if [ "${B_OS}" -eq 1 ] && [ "${KFS}" -eq 1 ]; then
+    expect_out "2u os_enforce: log.openaccess /dev/stderr + /dev/stdout, streams are files outside fs.write" "ownlog-done 0" "${WORK}/os" ownlog x
+    po="$( cd "${WORK}" && "${WORK}/os" ownlog x 2>&1 | cat )"
+    if [ "$(printf '%s\n' "${po}" | head -1)" = "ownlog-done 0" ]; then pass "2v os_enforce: the same with stdout and stderr a pipe: ownlog-done 0"
+    else fail "2v os_enforce: own streams as a pipe: got '$(printf '%s' "${po}" | head -1)'"; fi
+fi
+if [ "${B_PLAIN}" -eq 1 ]; then
+    expect_out "2w no os_enforce: log.openaccess on the own streams" "ownlog-done 0" "${WORK}/plain" ownlog x
+    expect_out "2s no os_enforce: granted uname runs and exits 0" "wait-done 0" "${WORK}/plain" spawnwait uname -s
+    expect_out "2t no os_enforce: the granted script runs and exits 0" "wait-done 0" "${WORK}/plain" spawnwait "${D}/run.sh" x
 fi
 
 # 3: the broker still answers first, unchanged
@@ -354,6 +393,21 @@ if [ "${B_OS}" -eq 1 ] && [ "${KFS}" -eq 1 ]; then
     esac
 else
     skip "8 needs the kernel layer (${OSK})"
+fi
+
+# 9: a granted command whose own files lie outside fs.read and the baseline
+# (a Homebrew or /usr/local tool) is named by CAP004 at start-up
+mkdir -p "${WORK}/tools"; cp "${ECHO}" "${WORK}/tools/echo"
+printf '[capabilities]\nfs_read = ["%s"]\nprocess_spawn = ["%s/tools/echo"]\nos_enforce = true\n' "${D}" "${WORK}" >"${WORK}/tools.toml"
+if [ "${KFS}" -eq 1 ] && build toolsbin -- "--config=${WORK}/tools.toml"; then
+    run "${WORK}/toolsbin" read "${D}/in.txt"
+    if [ "${OUT}" = "read-done 1" ] && printf '%s' "${ERR}" | /usr/bin/grep -a -q "^CAP004: .*the granted command ${WORK}/tools/echo lies outside fs.read and the system read baseline.*add its install prefix to fs.read"; then
+        pass "9 a granted command outside fs.read and the baseline: CAP004 names it, the program runs"
+    else
+        fail "9 CAP004 for an unreadable command: '${OUT}'"; sed 's/^/      | /' "${WORK}/e" | head -3
+    fi
+elif [ "${KFS}" -ne 1 ]; then
+    skip "9 needs the kernel layer (${OSK})"
 fi
 
 echo "------------------------------------------------------------------------"

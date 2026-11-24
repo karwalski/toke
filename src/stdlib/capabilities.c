@@ -1010,6 +1010,7 @@ static void os_enforce(void) {
     if (!__tk_cap_baked_os || g_mode != TK_CAP_MODE_ENFORCE) return;
     TkOsPlan p;
     os_plan(&p);
+    tk_os_complete(&p, os_warn);   /* script interpreters; unreadable commands */
     tk_os_apply(&p, os_warn);
     tk_os_plan_free(&p);
 }

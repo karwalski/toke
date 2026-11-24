@@ -76,6 +76,18 @@ exempt | file.c:open_errno_refine | lstat | 2026-10-01 | 121.77 | classifies an 
 
 exempt | tk_time.c:tz_file_offset | fopen | 2026-09-30 | 121.42 | the system time-zone database ($TZDIR or /usr/share/zoneinfo), relative name, no ".."; replaces the six TZ setenv/unsetenv exemptions
 
+# 138.44: the opt-in OS layer (cap_os.h) completes its exec rules at start-up,
+# before main, from the process.spawn scopes the broker already resolved: it
+# reads the `#!` line of each GRANTED command and resolves the interpreter it
+# names.  Nothing read reaches the program; it only widens the kernel's exec
+# rules to what the broker admits.  Runs only in a binary built with os_enforce.
+exempt | cap_os.h:tk_os_shebang | fopen | 2026-11-24 | 138.44 | reads the #! line of a granted process.spawn command at start-up to admit its interpreter in the OS layer's exec rules; nothing read reaches the program
+exempt | cap_os.h:tk_os_add_exe | access | 2026-11-24 | 138.44 | X_OK probe of a granted script's #! interpreter at start-up (OS layer exec rules)
+exempt | cap_os.h:tk_os_add_exe | realpath | 2026-11-24 | 138.44 | canonical path of a granted script's #! interpreter at start-up, for the OS layer's exec rules
+exempt | cap_os.h:tk_os_add_on_path | access | 2026-11-24 | 138.44 | X_OK probe of the PATH entries for a granted script's `#!/usr/bin/env NAME`, as env(1) would resolve it
+exempt | cap_os.h:tk_os_add_own_streams | readlink | 2026-11-24 | 138.44 | Linux, OS layer start-up: the path behind the process's own fd 1/2 (/proc/self/fd), to admit the /dev/stdout and /dev/stderr opens the broker admits with no grant
+exempt | cap_os.h:tk_os_add_own_streams | stat | 2026-11-24 | 138.44 | Linux, OS layer start-up: confirms the path behind fd 1/2 is still the file the descriptor holds before admitting writes to it
+
 # ── ungated: known gaps, each one a defect ─────────────────────────────────
 # Found by this gate on its first run (2026-09-29).  Each sits in a file
 # another batch held at the time, so each was reported for filing rather than

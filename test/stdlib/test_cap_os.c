@@ -78,6 +78,9 @@ static void test_plan_text(void) {
     ASSERT(has(s, "(subpath \"/q\\\"uo\\\\te\")"), "sbpl: a quote and a backslash are escaped");
     ASSERT(has(s, "(allow file-read-data (literal \"/work\"))"), "sbpl: the working directory itself (getcwd)");
     ASSERT(!has(s, "(subpath \"/work\")"), "sbpl: ... not beneath it");
+    ASSERT(has(s, "(allow file-read-data (literal \"/\"))"), "sbpl: the root directory itself (dyld in every exec'd child)");
+    ASSERT(!has(s, "(subpath \"/\")"), "sbpl: ... not beneath it");
+    ASSERT(has(s, "(allow file-write* (subpath \"/dev/fd\"))"), "sbpl: the own streams (/dev/fd, which /dev/stderr links to)");
     ASSERT(has(s, "(deny file-write*)\n(allow file-write*\n  (literal \"/dev/null\")"),
            "sbpl: write is denied, then /dev/null admitted");
     ASSERT(has(s, "(subpath \"/srv/cache\"))"), "sbpl: the write scope is a subpath");
@@ -182,6 +185,72 @@ static void test_seccomp_filter(void) {
     ASSERT(bpf_run(f, n, X86_64, 41, 2) == kill, "seccomp aarch64: an x86_64 call is killed");
 }
 
+/* ── Interpreters and the unreadable-command warning ─────────────────── */
+
+static char warned_text[2048];
+static void warn_keep(const char *layer, const char *reason) {
+    (void)layer;
+    snprintf(warned_text, sizeof warned_text, "%s", reason);
+}
+
+static void test_interpreters(void) {
+    char tmpl[PATH_MAX], root[PATH_MAX], sh[PATH_MAX + 16], envs[PATH_MAX + 16], r[PATH_MAX];
+    const char *td = getenv("TMPDIR");
+    snprintf(tmpl, sizeof tmpl, "%s/tk_cap_osi_XXXXXX", td && *td ? td : "/tmp");
+    if (!mkdtemp(tmpl) || !realpath(tmpl, root)) { printf("FAIL: mkdtemp\n"); failures++; return; }
+    snprintf(sh, sizeof sh, "%s/a.sh", root);
+    snprintf(envs, sizeof envs, "%s/b.sh", root);
+    FILE *w = fopen(sh, "w");   if (w) { fputs("#! /bin/sh -e\nexit 0\n", w); fclose(w); }
+    w = fopen(envs, "w");       if (w) { fputs("#!/usr/bin/env sh\nexit 0\n", w); fclose(w); }
+    chmod(sh, 0755); chmod(envs, 0755);
+
+    TkOsPlan p;
+    memset(&p, 0, sizeof p);
+    p.exec.on = 1;
+    (void)tk_os_add_path(&p.exec, sh);
+    (void)tk_os_add_path(&p.exec, envs);
+    tk_os_add_interpreters(&p.exec);
+    int has_sh = 0, has_env = 0;
+    char shr[PATH_MAX], envr[PATH_MAX];
+    if (!realpath("/bin/sh", shr)) shr[0] = '\0';
+    if (!realpath("/usr/bin/env", envr)) envr[0] = '\0';
+    for (int i = 0; i < p.exec.n; i++) {
+        if (!strcmp(p.exec.v[i], shr)) has_sh = 1;
+        if (!strcmp(p.exec.v[i], envr)) has_env = 1;
+    }
+    ASSERT(has_sh, "exec plan: a #! /bin/sh script adds its interpreter (realpath)");
+    ASSERT(has_env, "exec plan: a #!/usr/bin/env script adds env");
+#if defined(__APPLE__)
+    int has_var = 0;
+    if (realpath("/private/var/select/sh", r))
+        for (int i = 0; i < p.exec.n; i++) if (!strcmp(p.exec.v[i], r)) has_var = 1;
+    ASSERT(has_var, "exec plan (macOS): /bin/sh adds the shell it hands itself to");
+#else
+    (void)r;
+#endif
+    int before = p.exec.n;
+    tk_os_add_interpreters(&p.exec);
+    ASSERT(p.exec.n == before, "exec plan: completing twice adds nothing");
+
+    /* the warning: the scripts sit outside the read set; a read scope over
+     * their directory silences it */
+    p.read.on = 1;
+    warned_text[0] = '\0';
+    tk_os_warn_exec_unreadable(&p, TK_OS_READ_BASE, warn_keep);
+    ASSERT(has(warned_text, "add its install prefix to fs.read"), "warn: a command outside fs.read and the baseline is named");
+    (void)tk_os_add_path(&p.read, root);
+    warned_text[0] = '\0';
+    tk_os_warn_exec_unreadable(&p, TK_OS_READ_BASE, warn_keep);
+    ASSERT(warned_text[0] == '\0', "warn: none once the command's directory is in fs.read");
+    p.read.on = 0;
+    tk_os_warn_exec_unreadable(&p, TK_OS_READ_BASE, warn_keep);
+    ASSERT(warned_text[0] == '\0', "warn: none when fs.read is not restricted");
+    ASSERT(tk_os_beneath("/usr/bin/x", "/usr") && !tk_os_beneath("/usrx/b", "/usr") && tk_os_beneath("/a", "/"),
+           "beneath: component boundaries");
+    tk_os_plan_free(&p);
+    unlink(sh); unlink(envs); rmdir(root);
+}
+
 /* ── The kernel half ──────────────────────────────────────────────── */
 
 static int warned = 0;
@@ -265,6 +334,7 @@ static void test_kernel(void) {
 int main(void) {
     test_plan_text();
     test_seccomp_filter();
+    test_interpreters();
     test_kernel();
     if (failures) { printf("%d failure(s)\n", failures); return 1; }
     printf("all cap_os tests passed\n");

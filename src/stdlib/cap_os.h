@@ -40,6 +40,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <limits.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
 
 /* Every function is static and some are used on one platform only. */
 #define TK_OS_FN static __attribute__((unused))
@@ -176,6 +184,161 @@ static const char *const __attribute__((unused)) tk_os_linux_exec_base[] = {
     "/lib", "/lib64", "/usr/lib", "/usr/lib64", NULL
 };
 
+/* The read baseline of the platform this file is built for. */
+#if defined(__APPLE__)
+#define TK_OS_READ_BASE tk_os_darwin_read_base
+#else
+#define TK_OS_READ_BASE tk_os_linux_read_base
+#endif
+
+/* Is `path` the directory `dir` or beneath it? */
+TK_OS_FN int tk_os_beneath(const char *path, const char *dir) {
+    size_t l = strlen(dir);
+    if (l == 1 && dir[0] == '/') return path[0] == '/';
+    return !strncmp(path, dir, l) && (path[l] == '\0' || path[l] == '/');
+}
+
+/* ── Interpreters of granted commands ──────────────────────────────── */
+
+/* The kernel execs a script's `#!` interpreter as well as the script, and
+ * both platforms check that exec (Landlock: EXECUTE on the interpreter;
+ * macOS: process-exec), so a granted script would not start with only its
+ * own path admitted.  These helpers add, for each command in the exec
+ * list, the interpreter its `#!` line names (realpath), the command
+ * `/usr/bin/env NAME` resolves NAME to on PATH, and on macOS the shell
+ * /bin/sh hands itself to (/private/var/select/sh).  What those then exec
+ * on their own is not followed: see the design note's side effects. */
+
+/* Add realpath(p) to s when it is an executable regular file. */
+TK_OS_FN void tk_os_add_exe(TkOsPaths *s, const char *p) {
+    char r[PATH_MAX];
+    if (!p || access(p, X_OK) != 0 || !realpath(p, r)) return;
+    (void)tk_os_add_path(s, r);
+}
+
+/* Resolve a bare command name on PATH, as env(1) does; add it to s. */
+TK_OS_FN void tk_os_add_on_path(TkOsPaths *s, const char *name) {
+    const char *path = getenv("PATH");
+    char cand[PATH_MAX];
+    size_t nl = strlen(name);
+    if (!path || nl == 0 || strchr(name, '/')) return;
+    while (*path) {
+        const char *e = strchr(path, ':');
+        size_t l = e ? (size_t)(e - path) : strlen(path);
+        if (l > 0 && l + 1 + nl < sizeof cand) {
+            memcpy(cand, path, l);
+            cand[l] = '/';
+            memcpy(cand + l + 1, name, nl + 1);
+            if (access(cand, X_OK) == 0) { tk_os_add_exe(s, cand); return; }
+        }
+        if (!e) break;
+        path = e + 1;
+    }
+}
+
+/* Read the `#!` line of `file`: the interpreter into interp, and the first
+ * argument (the word after it) into arg; 0 when the file is not a script. */
+TK_OS_FN int tk_os_shebang(const char *file, char *interp, size_t in, char *arg, size_t an) {
+    char line[512];
+    FILE *f = fopen(file, "rb");
+    if (!f) return 0;
+    size_t n = fread(line, 1, sizeof line - 1, f);
+    fclose(f);
+    line[n] = '\0';
+    if (n < 3 || line[0] != '#' || line[1] != '!') return 0;
+    char *p = line + 2, *end;
+    while (*p == ' ' || *p == '\t') p++;
+    end = p;
+    while (*end && *end != ' ' && *end != '\t' && *end != '\n' && *end != '\r') end++;
+    if (end == p || (size_t)(end - p) >= in) return 0;
+    memcpy(interp, p, (size_t)(end - p));
+    interp[end - p] = '\0';
+    p = end;
+    while (*p == ' ' || *p == '\t') p++;
+    end = p;
+    while (*end && *end != ' ' && *end != '\t' && *end != '\n' && *end != '\r') end++;
+    if ((size_t)(end - p) >= an) end = p;
+    memcpy(arg, p, (size_t)(end - p));
+    arg[end - p] = '\0';
+    return 1;
+}
+
+/* Complete the exec list with the interpreters it needs (bounded: the
+ * list grows by what it finds, and each new entry is looked at once). */
+TK_OS_FN void tk_os_add_interpreters(TkOsPaths *s) {
+    char interp[PATH_MAX], arg[256];
+    for (int i = 0; i < s->n && i < 64; i++) {
+#if defined(__APPLE__)
+        if (!strcmp(s->v[i], "/bin/sh")) tk_os_add_exe(s, "/private/var/select/sh");
+#endif
+        if (!tk_os_shebang(s->v[i], interp, sizeof interp, arg, sizeof arg)) continue;
+        if (interp[0] != '/') continue;
+        tk_os_add_exe(s, interp);
+        const char *base = strrchr(interp, '/') + 1;
+        /* `#!/usr/bin/env NAME`: env execs NAME found on PATH (`-S` and the
+         * other options are not followed). */
+        if (!strcmp(base, "env") && arg[0] && arg[0] != '-') tk_os_add_on_path(s, arg);
+    }
+}
+
+/* A granted command (or interpreter) whose file lies outside the read
+ * scopes and the read baseline cannot load its own code under the OS layer
+ * (dyld / ld.so and a script's interpreter read it), so the kernel would
+ * refuse a spawn the broker admits.  Name each one: the fix is to add its
+ * install prefix (for example /opt/homebrew) to fs.read. */
+TK_OS_FN void tk_os_warn_exec_unreadable(const TkOsPlan *p, const char *const *base, TkOsWarn warn) {
+    if (!p->read.on || !p->exec.on) return;
+    for (int i = 0; i < p->exec.n; i++) {
+        const char *x = p->exec.v[i];
+        int ok = 0;
+        for (int j = 0; base[j] && !ok; j++) ok = tk_os_beneath(x, base[j]);
+        for (int j = 0; j < p->read.n && !ok; j++) ok = tk_os_beneath(x, p->read.v[j]);
+        if (ok) continue;
+        char why[PATH_MAX + 320];
+        snprintf(why, sizeof why, "the granted command %s lies outside fs.read and the system "
+                 "read baseline, so the OS layer refuses it its own files and libraries and it "
+                 "will not run; add its install prefix to fs.read", x);
+        warn("plan", why);
+    }
+}
+
+#if defined(__linux__)
+/* The process's own standard output and error.  The broker admits
+ * "/dev/stdout" and "/dev/stderr" with no grant (log_glue.c: they are not
+ * file-system authority), but on Linux opening them reopens, through
+ * /proc/self/fd, the file the descriptor holds, and Landlock checks that
+ * file at its own path.  Admit writes to exactly that file when the
+ * descriptor is already open for writing: the process can already write
+ * and truncate it.  A pipe or socket needs no rule (Landlock leaves them). */
+TK_OS_FN void tk_os_add_own_streams(TkOsPaths *w) {
+    for (int fd = 1; fd <= 2; fd++) {
+        char lnk[32], path[PATH_MAX];
+        struct stat st, ps;
+        int fl = fcntl(fd, F_GETFL);
+        if (fl < 0 || (fl & O_ACCMODE) == O_RDONLY) continue;
+        if (fstat(fd, &st) != 0 || !(S_ISREG(st.st_mode) || S_ISCHR(st.st_mode))) continue;
+        snprintf(lnk, sizeof lnk, "/proc/self/fd/%d", fd);
+        ssize_t n = readlink(lnk, path, sizeof path - 1);
+        if (n <= 0 || path[0] != '/') continue;
+        path[n] = '\0';
+        /* " (deleted)", or a different file now at that path: no rule */
+        if (stat(path, &ps) != 0 || ps.st_ino != st.st_ino || ps.st_dev != st.st_dev) continue;
+        (void)tk_os_add_path(w, path);
+    }
+}
+#endif
+
+/* Complete a plan before it is applied: interpreters, the process's own
+ * standard streams (Linux; macOS admits /dev/fd in the profile), then the
+ * warning. */
+TK_OS_FN void tk_os_complete(TkOsPlan *p, TkOsWarn warn) {
+    if (p->exec.on) tk_os_add_interpreters(&p->exec);
+#if defined(__linux__)
+    if (p->write.on) tk_os_add_own_streams(&p->write);
+#endif
+    tk_os_warn_exec_unreadable(p, TK_OS_READ_BASE, warn);
+}
+
 /* ── macOS: the SBPL profile ────────────────────────────────────────── */
 
 /* An SBPL string literal (TinyScheme: `\"` and `\\` are the escapes; the
@@ -240,9 +403,19 @@ TK_OS_FN void tk_os_sbpl(const TkOsPlan *p, TkOsBuf *b) {
             tk_os_sbpl_str(b, p->cwd);
             tk_os_put(b, "))\n");
         }
+        /* The root directory itself (its names, not beneath it): dyld reads
+         * it in every freshly exec'd process, so without it a granted
+         * command dies with SIGABRT before main. */
+        tk_os_put(b, "(allow file-read-data (literal \"/\"))\n");
     }
-    if (p->write.on)
+    if (p->write.on) {
         tk_os_sbpl_paths(b, "file-write*", tk_os_darwin_write_base, &p->write, "literal");
+        /* /dev/stderr and /dev/stdout are links to /dev/fd/2 and /dev/fd/1,
+         * and the profile checks the /dev/fd path.  Opening one duplicates a
+         * descriptor the process already holds, so it adds no authority, and
+         * the broker admits the own streams with no grant (log_glue.c). */
+        tk_os_put(b, "(allow file-write* (subpath \"/dev/fd\"))\n");
+    }
     if (p->exec.on) {
         tk_os_put(b, "(deny process-exec*)\n");
         for (int i = 0; i < p->exec.n; i++) {
