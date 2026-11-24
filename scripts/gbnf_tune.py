@@ -94,7 +94,8 @@ _EMPTY = None  # the empty LANGUAGE (no string), as opposed to the empty string
 def _rch(c: str) -> str:
     """One character as a Rust-regex literal (llguidance uses the regex crate)."""
     o = ord(c)
-    if c in "\\.+*?()|[]{}^$#&-~":
+    # `/` closes a Lark /regex/ literal, so it is escaped too (131.148)
+    if c in "\\.+*?()|[]{}^$#&-~/":
         return "\\" + c
     if 33 <= o < 127 or c == " ":
         return c
@@ -104,7 +105,7 @@ def _rch(c: str) -> str:
 def _rcls(neg: bool, ranges) -> str:
     def one(o: int) -> str:
         c = chr(o)
-        if c in "\\]^-[&~":
+        if c in "\\]^-[&~/":
             return "\\" + c
         return c if 33 <= o < 127 or c == " " else f"\\x{{{o:x}}}"
     return "[" + ("^" if neg else "") + "".join(
