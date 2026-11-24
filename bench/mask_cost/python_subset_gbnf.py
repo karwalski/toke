@@ -38,12 +38,17 @@ The claim this script checks (`--check`, also run by `make bench-mask-cost-check
      an insert, a swap per seed per round).  ast.parse is the syntax-only
      analogue of `tkc --dump-ast`: compile-time checks such as `break` outside
      a loop are not syntax.
+  3. AGREEMENT the two tuned forms accept exactly what python-subset.gbnf accepts,
+     over the hand-written ACCEPTS cases, the traps, the seeds and the mutants.
+     --mutation scores this: it deletes each alternative of the tuned forms in
+     turn and counts the deletions some input notices (131.149).
 Recogniser: XGrammar (the engine the benchmark measures), in the venv of
 bench/mask_cost/requirements.txt.
 
 Usage:
   python_subset_gbnf.py --write [--depth N]   regenerate python-subset.gbnf
   python_subset_gbnf.py --check [--rounds R]  regenerate-and-compare, coverage, soundness
+  python_subset_gbnf.py --mutation [--json F] the agreement check's mutation score (131.149)
 """
 from __future__ import annotations
 
@@ -454,18 +459,145 @@ TRAPS = [
 ]
 
 
+# 131.149: hand-written ACCEPT cases.  The traps above are inputs the grammar
+# must reject; these are inputs it must accept, written so that every
+# alternative of the tuned forms is exercised (no `tkc --python-view` seed
+# contains `**`, a decorator or `nonlocal`).  `--mutation` measures the claim:
+# it deletes each alternative of the tuned forms in turn and counts the
+# deletions the agreement check notices.  Every case must be accepted by
+# python-subset.gbnf and by ast.parse (--check fails otherwise).
+_OPS = "a | b ^ c & d << e >> f + g - h * i / j // k % l @ m ** n"
+_CMP = "a < b > c == d >= e <= f != g in h not in i is j is not k"
+_ESC = r"\n\x41\u0041"
+# an f-string field starts a second copy of the precedence chain, and each of
+# its levels is reached only by a field whose loosest operator is at that level
+_FOPS = "".join("{a %s b}" % op for op in "| ^ & << >> + - * / // % @ **".split())
+ACCEPTS = [
+    # every binary, comparison, boolean and unary operator
+    f"x = {_OPS}\n",
+    f"x = {_CMP}\n",
+    "x = not a or b and not c\nx = -a + +b * ~c\nx = a**-b\nx = (a)(b)\n",
+    # augmented and annotated assignment, every operator and target form
+    "".join(f"x {op}= 1\n" for op in "+ - * / // % ** >> << & | ^ @".split())
+    + "x.a += 1\nx[0] -= 1\nx: int\nx: int = 1\nx.a: int = 1\nx[0]: int\n",
+    # constants and every number form
+    "x = (None, True, False, ...)\n"
+    "x = (0, 00, 7, 10, 0x1F, 0XaB, 0b10, 0B01, 0o17, 0O7, 1.5, 1.5e3, 1.5E-3, 1.5e+3, 1e9, 1E-9)\n",
+    # every string kind, prefix and escape; adjacent strings
+    f'x = ("a{_ESC}", u"b", r"c\\q", \'a{_ESC}\', u\'b\', r\'c\\q\', "")\n'
+    f'x = ("""a{_ESC}\n"b""c""", u"""""", \'\'\'a{_ESC}\n\'b\'\'c\'\'\', u\'\'\'\'\'\')\n'
+    'x = "a" \'b\' """c""" f"d"\n',
+    # f-strings: escapes, doubled braces, specs, and every operator in a field
+    f'x = f"a{_ESC}{{{{b}}}}{{c}}{{ d }}{{e:>10}}{{ {{1}}}}"\n'
+    f"x = f'a{_ESC}{{{{b}}}}{{c}}{{ d }}{{e:>10}}{{ {{1}}}}'\n",
+    f'x = f"{{{_OPS}}}{{{_CMP}}}{{not a}}{{-a}}{{1}}{{a or b and c}}{{a if b else c}}{{"s"}}{_FOPS}"\n'
+    f"x = f'{{{_OPS}}}{{{_CMP}}}{{not a}}{{-a}}{{1}}{{a or b and c}}{{a if b else c}}{{\"s\"}}{_FOPS}'\n",
+    # displays, comprehensions, subscripts and slices, trailers
+    "x = [a, b,]\nx = []\nx = ()\nx = (a,)\nx = {}\nx = {a, b}\nx = {a: b, **c}\n"
+    "x = {a: b for a in c}\nx = {a for a in b}\nx = [a for a in b if c if d for e in f]\n"
+    "x = (a for a in b)\n",
+    "x = a[b]\nx = a[b:c]\nx = a[:]\nx = a[::]\nx = a[b:c:d]\nx = a[:c]\nx = a[::d]\n"
+    "x = a[b, c:d]\nx = a[b,]\nx = a.b(c)(d)[e]\n",
+    # lambda, conditional expression, calls
+    "f = lambda: 0\nf = lambda a, b=1: a\nf = lambda a=1, b=2,: a\nf = lambda a,: a\n"
+    "x = a if b else c\nx = lambda: (yield_)\n",
+    "f(a, *b, c=1, **d)\nf(**d)\nf(c=1,)\nf(a for a in b)\nf()\nf(a,)\n",
+    # parameters
+    "def f(a, b: int, c=1, d: int = 2, *e: int, g, h: int = 3, **i: int) -> int: pass\n"
+    "def f(**k): pass\ndef f(a=1, *b, **c,): pass\ndef f(a,): pass\ndef f(*a, b=1): pass\n",
+    # simple statements
+    "import a\nimport a.b as c, d\nfrom a import *\nfrom a.b import c as d, e\n"
+    "global a, b\nnonlocal a\ndel a, b.c, d[0], (e, f), [g]\nassert a\nassert a, b\n"
+    "raise\nraise a\nraise a from b\nreturn\nreturn a, b\npass; break; continue;\n"
+    "a = b = c\na, b = c\n(a, b), [c] = d\nfor (a, b), [c] in d: pass\n",
+    # compound statements with every continuation, blank and comment lines between them
+    "with a: pass\nwith a as b, c as (d, e): pass\n\n# comment\n"
+    "@a\n@b.c(d)\n\ndef f(): pass\n@a\nclass C(B, metaclass=M): pass\nclass D(): pass\n"
+    "try: pass\nexcept E as e: pass\n\nexcept (F, G): pass\nexcept: pass\nelse: pass\nfinally: pass\n",
+    # every pattern form
+    "match x:\n"
+    "    case 0 | 00 | 7 | -1 | 0x1F | 0b1 | 0o7 | 1.5 | 1.5e3 | 1e9 | -1.5: pass\n"
+    f'    case "a{_ESC}" | u"b" | r"c\\q" | \'a{_ESC}\' | u\'b\' | r\'c\\q\': pass\n'
+    "    case None | True | False: pass\n"
+    "    case a.b | a.b.c: pass\n"
+    "    case (y) | (): pass\n"
+    "    case (y,) | (y, z,) | (y, z): pass\n"
+    "    case [] | [y] | [y, z,]: pass\n"
+    "    case A() | A.B(y, k=z) | A(k=z,) | A(y,): pass\n"
+    "    case [_x, y] as w if w: pass\n"
+    "    case _:\n        pass\n",
+]
+
+
+def _names() -> list[str]:
+    """One identifier per alternative of the keyword-excluding identifier
+    trie: every proper keyword prefix that is not a keyword, and every trie
+    node followed by a character that leaves the trie."""
+    prefixes = {w[:k] for w in KEYWORDS for k in range(1, len(w) + 1)}
+    out = []
+    for p in [""] + sorted(prefixes):
+        pool = ID_START if p == "" else ID_CONT
+        rest = sorted(pool - {c for c in pool if p + c in prefixes})
+        if p and p not in KEYWORDS:
+            out.append(p)
+        if rest:
+            out.append(p + rest[0])
+            out.append(p + rest[-1])
+    return sorted(set(out))
+
+
+def _depth_program(d: int, depth: int = DEPTH) -> str:
+    """Every compound statement, each continuation and both suite forms at
+    indentation level `d`, reached through `d` nested `if`s."""
+    lines = ["    " * k + "if x:" for k in range(d)]
+    body = ["if a: pass", "elif b: pass", "else: pass",
+            "while a: pass", "else: pass", "for a in b: pass", "else: pass",
+            "def f(): pass", "class C: pass", "with a: pass",
+            "try: pass", "except E: pass", "except: pass", "else: pass", "finally: pass",
+            "try: pass", "except: pass", "try: pass", "finally: pass",
+            "@d", "def f(): pass", "@d", "class C: pass"]
+    if d < depth:
+        body += ["if a:", "    pass", "match x:", "    case _: pass"]
+    ind = "    " * d
+    return "\n".join(lines + [ind + s for s in body]) + "\n"
+
+
+def accept_cases(depth: int = DEPTH) -> list[tuple[str, str]]:
+    names = _names()
+    out = [(f"ACCEPTS[{k}]", t) for k, t in enumerate(ACCEPTS)]
+    out.append(("ACCEPTS[names]", "x = [" + ", ".join(names) + "]\n"
+                + "match x:\n    case [" + ", ".join(n for n in names) + "]: pass\n"))
+    out += [(f"ACCEPTS[depth{d}]", _depth_program(d, depth)) for d in range(depth + 1)]
+    return out
+
+
+def agreement_set(texts: list[tuple[str, str]], rounds: int, seed: int = 131052,
+                  accepts: bool = True) -> list[tuple[str, str, str]]:
+    """The agreement inputs, in the order --check runs them: [(label, text, kind)],
+    kind one of accept / trap / seed / mutant.  `accepts=False` leaves out the
+    131.149 accept cases (the set before that story)."""
+    rnd = random.Random(seed)
+    out = [(lbl, t, "accept") for lbl, t in accept_cases()] if accepts else []
+    out += [(f"TRAPS[{k}]", t, "trap") for k, t in enumerate(TRAPS)]
+    for label, t in texts:
+        out.append((label, t, "seed"))
+        out += [(label, m, "mutant") for m in mutants(t, rnd, rounds)]
+    return out
+
+
 def check(texts: list[tuple[str, str]], rounds: int, seed: int = 131052,
           tuned: dict | None = None) -> dict:
     """texts: [(label, python source)].  Returns the coverage/soundness report.
     `tuned` ({label: acceptor}): forms that must agree with python-subset.gbnf
-    on every trap, seed and mutant (131.141)."""
+    on every accept case, trap, seed and mutant (131.141, 131.149)."""
     import xgrammar as xgr
     from xgrammar.testing import _is_grammar_accept_string
     g = xgr.Grammar.from_ebnf(OUT.read_text(encoding="utf-8"), root_rule_name="root")
     acc = lambda s: bool(_is_grammar_accept_string(g, s))  # noqa: E731
     rep = {"seeds": len(texts), "seeds_accepted": 0, "seeds_rejected": [],
            "mutants": 0, "mutants_grammar_accepts": 0, "mutants_ast_accepts": 0,
-           "unsound": [], "rounds": rounds, "seed": seed,
+           "unsound": [], "rounds": rounds, "seed": seed, "traps": len(TRAPS),
+           "accepts": 0, "accepts_rejected": [],
            "tuned": {k: {"checked": 0, "disagree": []} for k in (tuned or {})}}
 
     def agree(label: str, t: str, a: bool) -> None:
@@ -474,29 +606,86 @@ def check(texts: list[tuple[str, str]], rounds: int, seed: int = 131052,
             r["checked"] += 1
             if f(t) != a:
                 r["disagree"].append({"seed": label, "text": t, "subset": a})
-    rnd = random.Random(seed)
-    rep["traps"] = len(TRAPS)
-    for k, t in enumerate(TRAPS):
-        a = acc(t)
-        agree(f"TRAPS[{k}]", t, a)
-        if a and not _ast_ok(t):
-            rep["unsound"].append({"seed": f"TRAPS[{k}]", "text": t})
-    for label, t in texts:
+    earley = None
+    for label, t, kind in agreement_set(texts, rounds, seed):
         a = acc(t)
         agree(label, t, a)
-        if a:
-            rep["seeds_accepted"] += 1
+        if kind == "accept":
+            # in the subset as XGrammar, gbnf_earley and CPython read it
+            if earley is None:
+                from gbnf_earley import Grammar
+                earley = Grammar(OUT.read_text(encoding="utf-8"))
+            rep["accepts"] += 1
+            if not (a and earley.accepts(t) and _ast_ok(t)):
+                rep["accepts_rejected"].append(label)
+        elif kind == "trap":
+            if a and not _ast_ok(t):
+                rep["unsound"].append({"seed": label, "text": t})
+        elif kind == "seed":
+            if a:
+                rep["seeds_accepted"] += 1
+            else:
+                rep["seeds_rejected"].append(label)
         else:
-            rep["seeds_rejected"].append(label)
-        for m in mutants(t, rnd, rounds):
+            p = _ast_ok(t)
             rep["mutants"] += 1
-            a, p = acc(m), _ast_ok(m)
-            agree(label, m, a)
             rep["mutants_grammar_accepts"] += a
             rep["mutants_ast_accepts"] += p
             if a and not p:
-                rep["unsound"].append({"seed": label, "text": m})
+                rep["unsound"].append({"seed": label, "text": t})
     return rep
+
+
+def mutation(texts: list[tuple[str, str]], rounds: int, out_json: Path | None = None,
+             jobs: int | None = None, forms: list[str] | None = None) -> int:
+    """131.149: the agreement check's mutation score.  Each alternative of each
+    alternation in the two tuned forms is deleted in turn; a deletion is killed
+    when some agreement input's verdict differs from python-subset.gbnf's.
+    Scored on the set without the accept cases (before) and with them (after)."""
+    import json
+    import time
+    import xgrammar as xgr
+    from xgrammar.testing import _is_grammar_accept_string
+    from gbnf_earley import Grammar
+    from gbnf_tune import llg_acceptor, xgr_acceptor
+    from grammar_mutation import mutants as alt_mutants, print_report, score, summarise
+    g = xgr.Grammar.from_ebnf(OUT.read_text(encoding="utf-8"), root_rule_name="root")
+    full = agreement_set(texts, rounds)
+    reference = [bool(_is_grammar_accept_string(g, t)) for _, t, _ in full]
+    acc_n = sum(k == "accept" for _, _, k in full)
+    # the accept cases must be in the subset as gbnf_earley reads it, too
+    t0 = time.time()
+    earley = Grammar(OUT.read_text(encoding="utf-8"))
+    bad = [lbl for lbl, t, k in full[:acc_n] if not earley.accepts(t)]
+    print(f"[mutation] {acc_n} accept cases: gbnf_earley on python-subset.gbnf accepts "
+          f"{acc_n - len(bad)}/{acc_n} ({time.time() - t0:.0f}s)")
+    if bad or not all(reference[:acc_n]):
+        print(f"[mutation] FAIL: accept cases outside the subset: {bad}")
+        return 1
+    before = [(lbl, t) for lbl, t, _ in full[acc_n:]]
+    new = [(lbl, t) for lbl, t, _ in full[:acc_n]]
+    dump = {}
+    for tag, path, dialect, mk in (("llguidance:python-subset-lexeme.lark", LEXEME_OUT, "lark", llg_acceptor),
+                                   ("xgrammar:python-subset-xgr.gbnf", XGR_OUT, "gbnf", xgr_acceptor)):
+        if forms and dialect not in forms:
+            continue
+        text = path.read_text(encoding="utf-8")
+        ms = alt_mutants(text, dialect)
+        t0 = time.time()
+        rep0 = score(ms, text, mk, before, reference[acc_n:], progress=True, jobs=jobs)
+        print(f"[mutation] {tag}: before 131.149 ({len(before)} inputs, {time.time() - t0:.0f}s)")
+        print_report(f"[mutation] {tag} before:", rep0, show=0)
+        # a survivor ran every old input, so only the accept cases can kill it
+        t0 = time.time()
+        live = [m for m in ms if m.status == "survived"]
+        score(live, text, mk, new, reference[:acc_n], jobs=jobs)
+        rep1 = summarise(ms)
+        print(f"[mutation] {tag}: after ({len(before) + len(new)} inputs, {time.time() - t0:.0f}s)")
+        print_report(f"[mutation] {tag} after:", rep1, show=100)
+        dump[tag] = {"before": rep0, "after": rep1}
+    if out_json:
+        out_json.write_text(json.dumps(dump, indent=1), encoding="utf-8")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -504,6 +693,12 @@ def main(argv: list[str] | None = None) -> int:
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--write", action="store_true")
     g.add_argument("--check", action="store_true")
+    g.add_argument("--mutation", action="store_true",
+                   help="the agreement check's mutation score (131.149; slow)")
+    ap.add_argument("--json", type=Path, default=None, help="--mutation: write the report here")
+    ap.add_argument("--jobs", type=int, default=None, help="--mutation: worker processes")
+    ap.add_argument("--forms", default="lark,gbnf",
+                    help="--mutation: which tuned forms (lark = llguidance, gbnf = XGrammar)")
     ap.add_argument("--depth", type=int, default=DEPTH)
     ap.add_argument("--rounds", type=int, default=3)
     a = ap.parse_args(argv)
@@ -521,6 +716,9 @@ def main(argv: list[str] | None = None) -> int:
     from mask_cost import program_set  # noqa: E402
     sel: dict = {}
     progs = program_set(sel)
+    if a.mutation:
+        return mutation([(p["path"], p["python"]) for p in progs], a.rounds, a.json, a.jobs,
+                        a.forms.split(","))
     rep = check([(p["path"], p["python"]) for p in progs], a.rounds, tuned=tuned_acceptors())
     # program_set drops what this grammar rejects; coverage counts those drops
     rejected = sel["excluded"]["python_subset_rejects"] + rep["seeds_rejected"]
@@ -532,15 +730,20 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[python-subset] soundness: {rep['traps']} traps + {rep['mutants']} mutants, grammar accepts "
           f"{rep['mutants_grammar_accepts']}, ast.parse accepts {rep['mutants_ast_accepts']}, "
           f"grammar-only {len(rep['unsound'])}")
+    print(f"[python-subset] accept cases: {rep['accepts'] - len(rep['accepts_rejected'])}/"
+          f"{rep['accepts']} accepted by python-subset.gbnf (XGrammar and gbnf_earley) and ast.parse")
+    for lbl in rep["accepts_rejected"]:
+        print(f"    NOT ACCEPTED: {lbl}")
     for u in rep["unsound"][:5]:
         print(f"    UNSOUND ({u['seed']}): {u['text'][:300]!r}")
     for k, r in rep["tuned"].items():
-        print(f"[python-subset] {k}: {r['checked'] - len(r['disagree'])}/{r['checked']} traps, "
-              f"seeds and mutants agree with python-subset.gbnf")
+        print(f"[python-subset] {k}: {r['checked'] - len(r['disagree'])}/{r['checked']} "
+              f"accept cases, traps, seeds and mutants agree with python-subset.gbnf")
         for d in r["disagree"][:5]:
             print(f"    DISAGREES ({d['seed']}, subset {'accepts' if d['subset'] else 'rejects'}): "
                   f"{d['text'][:200]!r}")
-    ok = not rejected and not rep["unsound"] and not any(r["disagree"] for r in rep["tuned"].values())
+    ok = (not rejected and not rep["unsound"] and not rep["accepts_rejected"]
+          and not any(r["disagree"] for r in rep["tuned"].values()))
     print("[python-subset] " + ("PASS" if ok else "FAIL"))
     return 0 if ok else 1
 

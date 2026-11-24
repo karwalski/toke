@@ -272,7 +272,7 @@ BUILD_ENV = SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all vendor-check clean lint lint-nonhost lint-file lint-report conform conform-sh conform-check build-all ci check-docs check-doc-patterns render-tki-quarantine render-stdlib-doc-quarantine render-stdlib-internal render-stdlib-signatures check-tki-names check-index check-index-all check-patterns render-patterns pin-mustmerge check-gbnf bench-gbnf check-grammar-artefacts bench-mask-cost bench-mask-cost-check check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all clean-cross diff-codegen diff-codegen-record diff-tkir diff-tkir-run test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all vendor-check clean lint lint-nonhost lint-file lint-report conform conform-sh conform-check build-all ci check-docs check-doc-patterns render-tki-quarantine render-stdlib-doc-quarantine render-stdlib-internal render-stdlib-signatures check-tki-names check-index check-index-all check-patterns render-patterns pin-mustmerge check-gbnf bench-gbnf check-grammar-artefacts bench-mask-cost bench-mask-cost-check bench-mask-cost-mutation check-error-codes check-glue-core check-core-reach check-parallel-stdlib check-metrics check-canonical check-claims-all clean-cross diff-codegen diff-codegen-record diff-tkir diff-tkir-run test-codegen test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -1433,6 +1433,12 @@ bench-mask-cost: $(BIN)
 	TKC=$(abspath $(BIN)) $(GRAMMAR_PY) bench/mask_cost/mask_cost.py
 bench-mask-cost-check: $(BIN)
 	TKC=$(abspath $(BIN)) $(GRAMMAR_PY) bench/mask_cost/python_subset_gbnf.py --check
+# 131.149: bench-mask-cost-mutation scores that check (not a gate, slow): it deletes
+# each alternative of the tuned Python forms in turn and counts the deletions the
+# agreement inputs notice, before and after the hand-written accept cases.
+# `scripts/grammar_mutation.py --toke` reports the same for toke's tuned forms.
+bench-mask-cost-mutation: $(BIN)
+	TKC=$(abspath $(BIN)) $(GRAMMAR_PY) bench/mask_cost/python_subset_gbnf.py --mutation
 
 # 132.6 — token-efficiency claim gate. Every published percentage about tokens must
 # carry its TEMSpec §6.3 fields (metric type, tokenizer, baseline, N), no withdrawn
