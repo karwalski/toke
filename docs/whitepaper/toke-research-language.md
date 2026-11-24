@@ -12,7 +12,7 @@ Whitepaper v2 — spec v0.4, compiler `tkc` toke 2.8.0
 
 > toke is a compiled programming language designed for LLM code generation. It has 14
 > keywords, a 59-character set, a backtrack-free grammar with bounded lookahead, and one
-> canonical form per construct, chosen by measurement in a 46-pattern catalogue and
+> canonical form per construct, chosen by measurement in a 47-pattern catalogue and
 > reproduced by `tkc --min`. That makes generated code cheap to constrain during decoding
 > and cheap for a compiler to verify afterwards. Token efficiency is one measured property
 > of toke, always reported with its tokenizer and its baseline, not the whole claim.
@@ -142,7 +142,7 @@ measurement.
 ### 2.3 Canonical: one measured form per construct
 
 `docs/spec/idiom-v0.4.md` states the idiom rules; `docs/spec/patterns-protocol-v0.4.md`
-turns them into measured verdicts; `patterns/catalogue.json` holds **46 entries across 10
+turns them into measured verdicts; `patterns/catalogue.json` holds **47 entries across 10
 families**. A form becomes canonical only by being best-or-tied on tokens *and* runtime, and
 all candidate forms of a pattern must print byte-identical output. `tkc --min` reproduces
 the canonical text, and it is the basis on which every efficiency number in this paper is
@@ -367,7 +367,7 @@ Anka is *deliberately verbose* with one canonical form, and it beat Python by **
 percentage points** on multi-step pipeline tasks (100% vs 60%), with GPT-4o-mini confirming
 +26.7 points. toke bets on terse *and* canonical and has never separated the two. It is
 entirely possible that the canonical-form half is doing the work and the terse half is
-costing accuracy. Story 131.54 A/Bs exactly this on our own 46-entry catalogue, which
+costing accuracy. Story 131.54 A/Bs exactly this on our own 47-entry catalogue, which
 already holds measured terse and verbose forms of identical behaviour. F2 in §7 states the
 consequence: "compact" drops out of the claim, and the idiom standard is rewritten. The
 language base still does not change; the canonical form does.
@@ -498,7 +498,7 @@ argument when it arrives. The authoritative table is `docs/about/positioning-202
 | # | Test | Result that falsifies | Consequence |
 |---|---|---|---|
 | F1 | **131.51** — byte-level durability spike | Byte-level generation constrained by toke's grammar is no cheaper and no more reliable than the same setup on a mainstream-language grammar: first-shot valid-program rate within noise, and no byte-per-solved-task advantage whose 95% CI excludes zero | The "durable under tokenizer-free architectures" claim in §4.2 is **retired**, not softened; the language-level claim narrows to constrained decoding under BPE only |
-| F2 | **131.54** — terseness vs reliability, A/B over the 46-entry catalogue | The canonical terse form scores *lower* on first-shot functional correctness than the most verbose measured form of the same pattern, 95% CI excluding zero | Terseness is demoted below reliability; the efficiency protocol gains a correctness term, verdicts flip, and "compact" drops out of the claim |
+| F2 | **131.54** — terseness vs reliability, A/B over the 47-entry catalogue | The canonical terse form scores *lower* on first-shot functional correctness than the most verbose measured form of the same pattern, 95% CI excluding zero | Terseness is demoted below reliability; the efficiency protocol gains a correctness term, verdicts flip, and "compact" drops out of the claim |
 | F3 | **128.10 + 128.15** — the no-training baseline | No trained lane beats a frontier model with the syntax card and the grammar artefacts and **no training** on cost per solved task | The bespoke-model programme **stops**; we ship the grammar, the compiler and the tooling and say publicly that training was not justified |
 | F4 | **131.55** — cost per solved task, four arms | toke plus its best lane does not beat Python plus a frontier model plus type-constrained decoding, same tasks, failed attempts priced, input priced cache-aware | The language-level claim fails on the metric we chose ourselves; toke is then a research result about grammar design, not a production proposal |
 | F5 | **116.9** — v0.4 tokenizer Phase-3 gate | The retrained, locked v0.4 tokenizer does not beat cl100k_base = 242,427 tokens on the 2,000-record baseline sample | The tokenizer half is dead; every token-reduction claim is withdrawn from every surface and §3 is deleted rather than requalified |
