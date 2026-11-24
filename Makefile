@@ -1419,12 +1419,16 @@ bench-gbnf: $(BIN)
 # if the engine's verdict differs from gbnf_earley's on test/gbnf/fragments.json
 # (an engine that is not installed is reported SKIPPED). GRAMMAR_PY picks the
 # interpreter, e.g. a venv from bench/mask_cost/requirements.txt.
+# 131.141: the engine-tuned forms docs/spec/toke-lexeme.lark (llguidance) and
+# toke-xgr.gbnf (XGrammar) are GENERATED from toke.gbnf (scripts/gbnf_tune.py
+# --write) and gated the same way, on every fragment.
 # bench-mask-cost: per-token mask / compile time, toke vs a Python subset vs JSON,
 # XGrammar and llguidance, cl100k_base vocabulary (writes build/mask-cost/*.json).
-# bench-mask-cost-check: the Python-subset grammar's coverage and soundness check.
+# bench-mask-cost-check: the Python-subset grammars' coverage and soundness check.
 GRAMMAR_PY ?= python3
 check-grammar-artefacts:
 	$(GRAMMAR_PY) scripts/gbnf_to_lark.py --check
+	$(GRAMMAR_PY) scripts/gbnf_tune.py --check
 bench-mask-cost: $(BIN)
 	TKC=$(abspath $(BIN)) $(GRAMMAR_PY) bench/mask_cost/mask_cost.py
 bench-mask-cost-check: $(BIN)

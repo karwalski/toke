@@ -30,6 +30,11 @@ that CPython's ast.parse and bench/mask_cost/python-subset.gbnf both accept.
   toke    the source file, grammar docs/spec/toke.gbnf (toke.lark for llguidance)
   python  `tkc --python-view` of it (its leading comment header removed),
           grammar bench/mask_cost/python-subset.gbnf
+  (131.141) toke and python are also measured in their ENGINE-TUNED forms
+          (scripts/gbnf_tune.py): docs/spec/toke-lexeme.lark and
+          bench/mask_cost/python-subset-lexeme.lark (lexeme level, llguidance
+          only), docs/spec/toke-xgr.gbnf and python-subset-xgr.gbnf (inlined
+          whitespace + lookahead assertions, XGrammar only)
   json    `tkc --dump-ast` of it, compact, grammar: the standard JSON GBNF of
           scripts/gbnf_bench.py (the control every constrained-decoding paper
           uses); and, XGrammar only, xgrammar's built-in JSON grammar, which is
@@ -51,7 +56,7 @@ first (`make`); TKC overrides the binary.
 
 Usage:
   mask_cost.py [--programs N] [--positions K] [--repeats R] [--compile-runs C]
-               [--engines xgrammar,llguidance] [--out PATH]
+               [--engines xgrammar,llguidance] [--grammars NAME,...] [--out PATH]
 """
 from __future__ import annotations
 
@@ -76,6 +81,10 @@ sys.path.insert(0, str(HERE))
 
 TOKE_GBNF = ROOT / "docs" / "spec" / "toke.gbnf"
 PY_GBNF = HERE / "python-subset.gbnf"
+TOKE_LEXEME = ROOT / "docs" / "spec" / "toke-lexeme.lark"
+TOKE_XGR = ROOT / "docs" / "spec" / "toke-xgr.gbnf"
+PY_LEXEME = HERE / "python-subset-lexeme.lark"
+PY_XGR = HERE / "python-subset-xgr.gbnf"
 
 
 def _tkc() -> str:
@@ -328,11 +337,19 @@ def grammars() -> dict[str, list[dict]]:
     sha = lambda s: hashlib.sha256(s.encode()).hexdigest()  # noqa: E731
     toke = TOKE_GBNF.read_text(encoding="utf-8")
     py = PY_GBNF.read_text(encoding="utf-8")
+
+    def tuned(name: str, path: Path, kind: str) -> dict:
+        text = path.read_text(encoding="utf-8")
+        return {"name": name, "source": str(path.relative_to(ROOT)), "sha256": sha(text), "builtin": None,
+                "gbnf": text if kind == "gbnf" else None, "lark": text if kind == "lark" else None}
     return {
         "toke": [{"name": "toke", "source": "docs/spec/toke.gbnf", "gbnf": toke, "lark": generate(toke),
-                  "sha256": sha(toke), "builtin": None}],
+                  "sha256": sha(toke), "builtin": None},
+                 tuned("toke-lexeme", TOKE_LEXEME, "lark"), tuned("toke-xgr", TOKE_XGR, "gbnf")],
         "python": [{"name": "python-subset", "source": "bench/mask_cost/python-subset.gbnf", "gbnf": py,
-                    "lark": generate(py), "sha256": sha(py), "builtin": None}],
+                    "lark": generate(py), "sha256": sha(py), "builtin": None},
+                   tuned("python-subset-lexeme", PY_LEXEME, "lark"),
+                   tuned("python-subset-xgr", PY_XGR, "gbnf")],
         "json": [{"name": "json", "source": "scripts/gbnf_bench.py JSON_GBNF", "gbnf": JSON_GBNF,
                   "lark": generate(JSON_GBNF), "sha256": sha(JSON_GBNF), "builtin": None},
                  {"name": "json-xgrammar-builtin", "source": "xgrammar builtin_json_grammar",
@@ -350,6 +367,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="comma list of xgrammar, llguidance (default limits), llguidance-raised")
     ap.add_argument("--llg-step-max-items", type=int, default=5_000_000,
                     help="step_max_items for llguidance-raised (llguidance default 50,000)")
+    ap.add_argument("--grammars", default=None,
+                    help="comma list of grammar names to measure (default: all)")
     ap.add_argument("--out", default=None)
     args = ap.parse_args(argv)
     from importlib.metadata import version
@@ -379,8 +398,13 @@ def main(argv: list[str] | None = None) -> int:
     for lang, gs in grammars().items():
         texts = [p[lang] for p in progs]
         for g in gs:
+            if args.grammars and g["name"] not in args.grammars.split(","):
+                continue
             for eng in engines:
-                if g["builtin"] and eng.name != "xgrammar":
+                # each engine measures the forms written for it: XGrammar a GBNF
+                # (or its built-in grammar), llguidance a Lark grammar
+                usable = (g["builtin"] or g["gbnf"]) if eng.name == "xgrammar" else g["lark"]
+                if not usable:
                     continue
                 t0 = time.time()
                 r = measure(eng, g, texts, enc, args)
@@ -394,7 +418,7 @@ def main(argv: list[str] | None = None) -> int:
                       f"{r['own_token_disallowed']}, accepted {r['programs_accepted_to_end']}/{r['programs']})",
                       flush=True)
     doc = {
-        "story": "131.52", "date": today,
+        "story": "131.52, 131.141", "date": today,
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "toke_commit": subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True,
                                       text=True).stdout.strip(),

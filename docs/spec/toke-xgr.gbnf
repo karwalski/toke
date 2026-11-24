@@ -1,0 +1,147 @@
+# toke v0.4 -- GBNF tuned for XGrammar (story 131.141).
+#
+# GENERATED from docs/spec/toke.gbnf by scripts/gbnf_tune.py -- do not edit.
+# Edit toke.gbnf, then run `python3 scripts/gbnf_tune.py --write`.
+# `make check-grammar-artefacts` fails if this file differs from a fresh
+# generation, and (XGrammar installed) if XGrammar's verdict differs from the
+# reference recogniser's on any fragment of test/gbnf/fragments.json.
+#
+# The same language as toke.gbnf, written for XGrammar's automata: every
+# ws / ws1 reference is inlined as a whitespace character-class loop (comments
+# stay a rule), and the rules that end a word token carry the lookahead
+# assertion (= [^a-zA-Z0-9]), which XGrammar uses only to classify tokens
+# when it builds its mask cache.  For other engines, use toke.gbnf.
+
+root        ::= [ \t\r\n]* (comment [ \t\r\n]*)* moddecl (sep importdecl)* (sep typedecl)* (sep constdecl)* (sep letstmt)* (sep funcdecl)* ([ \t\r\n]* (comment [ \t\r\n]*)* ";")? [ \t\r\n]* (comment [ \t\r\n]*)*
+sep         ::= [ \t\r\n]* (comment [ \t\r\n]*)* ";" [ \t\r\n]* (comment [ \t\r\n]*)*
+moddecl     ::= "m" [ \t\r\n]* (comment [ \t\r\n]*)* "=" [ \t\r\n]* (comment [ \t\r\n]*)* modpath
+importdecl  ::= "i" [ \t\r\n]* (comment [ \t\r\n]*)* "=" [ \t\r\n]* (comment [ \t\r\n]*)* ident [ \t\r\n]* (comment [ \t\r\n]*)* ":" [ \t\r\n]* (comment [ \t\r\n]*)* modpath ([ \t\r\n]* (comment [ \t\r\n]*)* string)?
+modpath     ::= seg ([ \t\r\n]* (comment [ \t\r\n]*)* "." [ \t\r\n]* (comment [ \t\r\n]*)* seg)*
+seg         ::= ident | typeident
+typedecl    ::= "t" [ \t\r\n]* (comment [ \t\r\n]*)* "=" [ \t\r\n]* (comment [ \t\r\n]*)* ("$" [ \t\r\n]* (comment [ \t\r\n]*)* ident | ident | typeident) [ \t\r\n]* (comment [ \t\r\n]*)* "{" [ \t\r\n]* (comment [ \t\r\n]*)* field ([ \t\r\n]* (comment [ \t\r\n]*)* ";" [ \t\r\n]* (comment [ \t\r\n]*)* field)* [ \t\r\n]* (comment [ \t\r\n]*)* "}"
+field       ::= ("$" [ \t\r\n]* (comment [ \t\r\n]*)*)? (ident | typeident) [ \t\r\n]* (comment [ \t\r\n]*)* ":" [ \t\r\n]* (comment [ \t\r\n]*)* type
+constdecl   ::= cname [ \t\r\n]* (comment [ \t\r\n]*)* "=" [ \t\r\n]* (comment [ \t\r\n]*)* literal [ \t\r\n]* (comment [ \t\r\n]*)* ":" [ \t\r\n]* (comment [ \t\r\n]*)* type
+funcdecl    ::= "f" [ \t\r\n]* (comment [ \t\r\n]*)* "=" [ \t\r\n]* (comment [ \t\r\n]*)* ident [ \t\r\n]* (comment [ \t\r\n]*)* "(" [ \t\r\n]* (comment [ \t\r\n]*)* params? [ \t\r\n]* (comment [ \t\r\n]*)* ")" [ \t\r\n]* (comment [ \t\r\n]*)* ":" [ \t\r\n]* (comment [ \t\r\n]*)* retspec ([ \t\r\n]* (comment [ \t\r\n]*)* block)?
+params      ::= param ([ \t\r\n]* (comment [ \t\r\n]*)* ";" [ \t\r\n]* (comment [ \t\r\n]*)* param)*
+param       ::= ident [ \t\r\n]* (comment [ \t\r\n]*)* ":" [ \t\r\n]* (comment [ \t\r\n]*)* type
+retspec     ::= type ([ \t\r\n]* (comment [ \t\r\n]*)* "!" [ \t\r\n]* (comment [ \t\r\n]*)* type)?
+block       ::= "{" [ \t\r\n]* (comment [ \t\r\n]*)* stmts? "}"
+stmts       ::= (item [ \t\r\n]* (comment [ \t\r\n]*)*)* simple [ \t\r\n]* (comment [ \t\r\n]*)* | (item [ \t\r\n]* (comment [ \t\r\n]*)*)+
+stmts-p     ::= simple-p [ \t\r\n]* (comment [ \t\r\n]*)* | item-p [ \t\r\n]* (comment [ \t\r\n]*)* stmts?
+item        ::= simple [ \t\r\n]* (comment [ \t\r\n]*)* ";" | compound ([ \t\r\n]* (comment [ \t\r\n]*)* ";")? | arena ([ \t\r\n]* (comment [ \t\r\n]*)* ";")?
+item-p      ::= simple-p [ \t\r\n]* (comment [ \t\r\n]*)* ";"
+simple      ::= letstmt | assign | ret | "br" | scope | exprstmt
+simple-p    ::= "<" ([ \t\r\n]* (comment [ \t\r\n]*)* expr)? | orx-p
+compound    ::= ifstmt | loop
+letstmt     ::= "let" ([ \t\r\n]+ (comment [ \t\r\n]*)* | comment [ \t\r\n]* (comment [ \t\r\n]*)*) ident ([ \t\r\n]* (comment [ \t\r\n]*)* ":" [ \t\r\n]* (comment [ \t\r\n]*)* type)? [ \t\r\n]* (comment [ \t\r\n]*)* "=" [ \t\r\n]* (comment [ \t\r\n]*)* ("mut" [ \t\r\n]* (comment [ \t\r\n]*)* "." [ \t\r\n]* (comment [ \t\r\n]*)*)? expr
+assign      ::= ident [ \t\r\n]* (comment [ \t\r\n]*)* "=" [ \t\r\n]* (comment [ \t\r\n]*)* expr
+ret         ::= "<" ([ \t\r\n]* (comment [ \t\r\n]*)* expr)? | "rt" expr-aw?
+scope       ::= "sc" [ \t\r\n]* (comment [ \t\r\n]*)* block
+exprstmt    ::= mtexpr | orx
+ifstmt      ::= "if" [ \t\r\n]* (comment [ \t\r\n]*)* "(" [ \t\r\n]* (comment [ \t\r\n]*)* expr [ \t\r\n]* (comment [ \t\r\n]*)* ")" [ \t\r\n]* (comment [ \t\r\n]*)* block ([ \t\r\n]* (comment [ \t\r\n]*)* "el" (([ \t\r\n]+ (comment [ \t\r\n]*)* | comment [ \t\r\n]* (comment [ \t\r\n]*)*) ifstmt | [ \t\r\n]* (comment [ \t\r\n]*)* block))?
+loop        ::= "lp" [ \t\r\n]* (comment [ \t\r\n]*)* "(" [ \t\r\n]* (comment [ \t\r\n]*)* (loop3 | expr) [ \t\r\n]* (comment [ \t\r\n]*)* ")" [ \t\r\n]* (comment [ \t\r\n]*)* block
+loop3       ::= ("let" ([ \t\r\n]+ (comment [ \t\r\n]*)* | comment [ \t\r\n]* (comment [ \t\r\n]*)*))? ident [ \t\r\n]* (comment [ \t\r\n]*)* "=" [ \t\r\n]* (comment [ \t\r\n]*)* expr [ \t\r\n]* (comment [ \t\r\n]*)* ";" [ \t\r\n]* (comment [ \t\r\n]*)* expr [ \t\r\n]* (comment [ \t\r\n]*)* ";" [ \t\r\n]* (comment [ \t\r\n]*)* ident [ \t\r\n]* (comment [ \t\r\n]*)* "=" [ \t\r\n]* (comment [ \t\r\n]*)* expr
+arena       ::= "{" [ \t\r\n]* (comment [ \t\r\n]*)* "arena" ([ \t\r\n]* (comment [ \t\r\n]*)* | ([ \t\r\n]+ (comment [ \t\r\n]*)* | comment [ \t\r\n]* (comment [ \t\r\n]*)*) stmts | stmts-p) "}"
+expr        ::= ifexpr | mtexpr | orx
+expr-aw     ::= ([ \t\r\n]+ (comment [ \t\r\n]*)* | comment [ \t\r\n]* (comment [ \t\r\n]*)*) expr | orx-p
+ifexpr      ::= "if" [ \t\r\n]* (comment [ \t\r\n]*)* "(" [ \t\r\n]* (comment [ \t\r\n]*)* expr [ \t\r\n]* (comment [ \t\r\n]*)* ")" [ \t\r\n]* (comment [ \t\r\n]*)* block [ \t\r\n]* (comment [ \t\r\n]*)* "el" (([ \t\r\n]+ (comment [ \t\r\n]*)* | comment [ \t\r\n]* (comment [ \t\r\n]*)*) ifexpr | [ \t\r\n]* (comment [ \t\r\n]*)* block)
+mtexpr      ::= "mt" (([ \t\r\n]+ (comment [ \t\r\n]*)* | comment [ \t\r\n]* (comment [ \t\r\n]*)*) orx-nt | orx-nt-p) [ \t\r\n]* (comment [ \t\r\n]*)* "{" [ \t\r\n]* (comment [ \t\r\n]*)* arm ([ \t\r\n]* (comment [ \t\r\n]*)* ";" [ \t\r\n]* (comment [ \t\r\n]*)* arm)* ([ \t\r\n]* (comment [ \t\r\n]*)* ";")? [ \t\r\n]* (comment [ \t\r\n]*)* "}"
+arm         ::= ("$" [ \t\r\n]* (comment [ \t\r\n]*)* ident | ident | typeident) [ \t\r\n]* (comment [ \t\r\n]*)* ":" [ \t\r\n]* (comment [ \t\r\n]*)* ident ([ \t\r\n]* (comment [ \t\r\n]*)* "<" ([ \t\r\n]* (comment [ \t\r\n]*)* expr)? | expr-aw)
+orx         ::= un orrest
+orx-p       ::= un-p orrest
+orrest      ::= arrest ([ \t\r\n]* (comment [ \t\r\n]*)* cmpop [ \t\r\n]* (comment [ \t\r\n]*)* arx)? ([ \t\r\n]* (comment [ \t\r\n]*)* logop [ \t\r\n]* (comment [ \t\r\n]*)* cmpx)*
+arrest      ::= ([ \t\r\n]* (comment [ \t\r\n]*)* arop [ \t\r\n]* (comment [ \t\r\n]*)* un)*
+arx         ::= un arrest
+cmpx        ::= arx ([ \t\r\n]* (comment [ \t\r\n]*)* cmpop [ \t\r\n]* (comment [ \t\r\n]*)* arx)?
+logop       ::= "||" | "&&" | "|" | "^" | "&"
+cmpop       ::= "==" | "!=" | "<=" | ">=" | "<" | ">"
+arop        ::= "<<" | ">>" | "+" | "-" | "*" | "/" | "%"
+orx-nt      ::= un-nt | un orrest-nt
+orx-nt-p    ::= un-nt-p | un-p orrest-nt
+orrest-nt   ::= arrest [ \t\r\n]* (comment [ \t\r\n]*)* arop [ \t\r\n]* (comment [ \t\r\n]*)* un-nt | arrest [ \t\r\n]* (comment [ \t\r\n]*)* cmpop [ \t\r\n]* (comment [ \t\r\n]*)* arx-nt | arrest ([ \t\r\n]* (comment [ \t\r\n]*)* cmpop [ \t\r\n]* (comment [ \t\r\n]*)* arx)? ([ \t\r\n]* (comment [ \t\r\n]*)* logop [ \t\r\n]* (comment [ \t\r\n]*)* cmpx)* [ \t\r\n]* (comment [ \t\r\n]*)* logop [ \t\r\n]* (comment [ \t\r\n]*)* cmpx-nt
+arx-nt      ::= (un [ \t\r\n]* (comment [ \t\r\n]*)* arop [ \t\r\n]* (comment [ \t\r\n]*)*)* un-nt
+cmpx-nt     ::= arx-nt | arx [ \t\r\n]* (comment [ \t\r\n]*)* cmpop [ \t\r\n]* (comment [ \t\r\n]*)* arx-nt
+un          ::= ("-" | "~") [ \t\r\n]* (comment [ \t\r\n]*)* un | "!" [ \t\r\n]* (comment [ \t\r\n]*)* un-nsl | cp | "spawn" expr-aw
+un-p        ::= ("-" | "~") [ \t\r\n]* (comment [ \t\r\n]*)* un | "!" [ \t\r\n]* (comment [ \t\r\n]*)* un-nsl | cp-p
+un-nsl      ::= ("-" | "~") [ \t\r\n]* (comment [ \t\r\n]*)* un | "!" [ \t\r\n]* (comment [ \t\r\n]*)* un-nsl | cp-nsl | "spawn" expr-aw
+un-nt       ::= ("-" | "~") [ \t\r\n]* (comment [ \t\r\n]*)* un-nt | "!" [ \t\r\n]* (comment [ \t\r\n]*)* un-nt | cp-nt | "spawn" expr-aw
+un-nt-p     ::= ("-" | "~") [ \t\r\n]* (comment [ \t\r\n]*)* un-nt | "!" [ \t\r\n]* (comment [ \t\r\n]*)* un-nt | cp-nt-p
+cast-w      ::= (([ \t\r\n]+ (comment [ \t\r\n]*)* | comment [ \t\r\n]* (comment [ \t\r\n]*)*) "as" asty)? prop?
+cast-p      ::= ([ \t\r\n]* (comment [ \t\r\n]*)* "as" asty)? prop?
+cast1-w     ::= ([ \t\r\n]+ (comment [ \t\r\n]*)* | comment [ \t\r\n]* (comment [ \t\r\n]*)*) "as" asty prop? | prop
+cast1-p     ::= [ \t\r\n]* (comment [ \t\r\n]*)* "as" asty prop? | prop
+asty        ::= ([ \t\r\n]+ (comment [ \t\r\n]*)* | comment [ \t\r\n]* (comment [ \t\r\n]*)*) type | type-p
+prop        ::= [ \t\r\n]* (comment [ \t\r\n]*)* "!" [ \t\r\n]* (comment [ \t\r\n]*)* type
+cp          ::= prim-ew cast-w | prim-ep cast-p | prim tl-ew cast-w | prim tl-ep cast-p | "fn" cast-w
+cp-p        ::= prim-p-ew cast-w | prim-p-ep cast-p | prim-p tl-ew cast-w | prim-p tl-ep cast-p
+cp-nsl      ::= prim-ew cast-w | prim-ep-nsl cast-p | prim-sl cast1-p | prim tl-ew cast-w | prim tl-ep cast-p | "fn" cast-w
+cp-nt       ::= prim-ew-nt cast-w | prim-tr cast1-w | prim-ep cast-p | prim tl-ew cast-w | prim tl-ep cast-p | "fn" cast-w
+cp-nt-p     ::= prim-ref cast-w | prim-typ cast1-w | prim-p-ep cast-p | prim-p tl-ew cast-w | prim-p tl-ep cast-p
+tl-ew       ::= tlg* (tlg-d | idx idx2*)
+tl-ep       ::= tlg* tlg-c
+tlg         ::= tlg-c | tlg-d
+tlg-c       ::= (idx idx2*)? [ \t\r\n]* (comment [ \t\r\n]*)* "(" [ \t\r\n]* (comment [ \t\r\n]*)* args? [ \t\r\n]* (comment [ \t\r\n]*)* ")"
+tlg-d       ::= (idx idx2*)? [ \t\r\n]* (comment [ \t\r\n]*)* "." [ \t\r\n]* (comment [ \t\r\n]*)* vname
+idx         ::= [ \t\r\n]* (comment [ \t\r\n]*)* "." [ \t\r\n]* (comment [ \t\r\n]*)* int
+idx2        ::= ([ \t\r\n]+ (comment [ \t\r\n]*)* | comment [ \t\r\n]* (comment [ \t\r\n]*)*) "." [ \t\r\n]* (comment [ \t\r\n]*)* int | "." ([ \t\r\n]+ (comment [ \t\r\n]*)* | comment [ \t\r\n]* (comment [ \t\r\n]*)*) int
+args        ::= expr ([ \t\r\n]* (comment [ \t\r\n]*)* ";" [ \t\r\n]* (comment [ \t\r\n]*)* expr)*
+prim        ::= prim-ew | prim-ep
+prim-ew     ::= prim-ew-nt | prim-tr
+prim-ew-nt  ::= vname | literal-w | prim-ref
+prim-ep     ::= prim-ep-nsl | prim-sl
+prim-ep-nsl ::= closure | string | prim-arr | prim-par
+prim-p      ::= prim-p-ew | prim-p-ep
+prim-p-ew   ::= prim-typ | prim-ref
+prim-p-ep   ::= string | prim-slp | prim-arr | prim-par
+prim-tr     ::= typeident | prim-typ
+prim-typ    ::= "$" [ \t\r\n]* (comment [ \t\r\n]*)* ident
+prim-ref    ::= "&" [ \t\r\n]* (comment [ \t\r\n]*)* ident
+prim-sl     ::= typeident [ \t\r\n]* (comment [ \t\r\n]*)* "{" sbody "}" | prim-slp
+prim-slp    ::= "$" [ \t\r\n]* (comment [ \t\r\n]*)* ident [ \t\r\n]* (comment [ \t\r\n]*)* "{" sbody-d "}"
+prim-arr    ::= "@" [ \t\r\n]* (comment [ \t\r\n]*)* "(" [ \t\r\n]* (comment [ \t\r\n]*)* (aitems [ \t\r\n]* (comment [ \t\r\n]*)*)? ")"
+prim-par    ::= "(" [ \t\r\n]* (comment [ \t\r\n]*)* expr [ \t\r\n]* (comment [ \t\r\n]*)* ")"
+closure     ::= "fn" [ \t\r\n]* (comment [ \t\r\n]*)* "(" [ \t\r\n]* (comment [ \t\r\n]*)* params? [ \t\r\n]* (comment [ \t\r\n]*)* ")" ([ \t\r\n]* (comment [ \t\r\n]*)* ":" [ \t\r\n]* (comment [ \t\r\n]*)* retspec)? [ \t\r\n]* (comment [ \t\r\n]*)* block
+sbody       ::= [ \t\r\n]* (comment [ \t\r\n]*)* (finit ([ \t\r\n]* (comment [ \t\r\n]*)* ";" [ \t\r\n]* (comment [ \t\r\n]*)* finit)* ([ \t\r\n]* (comment [ \t\r\n]*)* ";")? [ \t\r\n]* (comment [ \t\r\n]*)*)?
+sbody-d     ::= [ \t\r\n]* (comment [ \t\r\n]*)* (finit-d ([ \t\r\n]* (comment [ \t\r\n]*)* ";" [ \t\r\n]* (comment [ \t\r\n]*)* finit-d)* ([ \t\r\n]* (comment [ \t\r\n]*)* ";")? [ \t\r\n]* (comment [ \t\r\n]*)*)?
+finit       ::= (ident | typeident) [ \t\r\n]* (comment [ \t\r\n]*)* ":" [ \t\r\n]* (comment [ \t\r\n]*)* expr
+finit-d     ::= ("$" [ \t\r\n]* (comment [ \t\r\n]*)*)? (ident | typeident) [ \t\r\n]* (comment [ \t\r\n]*)* ":" [ \t\r\n]* (comment [ \t\r\n]*)* expr
+aitems      ::= expr ([ \t\r\n]* (comment [ \t\r\n]*)* ";" [ \t\r\n]* (comment [ \t\r\n]*)* expr)* ([ \t\r\n]* (comment [ \t\r\n]*)* ";")? | expr [ \t\r\n]* (comment [ \t\r\n]*)* ":" [ \t\r\n]* (comment [ \t\r\n]*)* expr ([ \t\r\n]* (comment [ \t\r\n]*)* ";" [ \t\r\n]* (comment [ \t\r\n]*)* expr [ \t\r\n]* (comment [ \t\r\n]*)* ":" [ \t\r\n]* (comment [ \t\r\n]*)* expr)* ([ \t\r\n]* (comment [ \t\r\n]*)* ";")?
+type        ::= type-w | type-p
+type-w      ::= scalar | typeident | ident [ \t\r\n]* (comment [ \t\r\n]*)* "." [ \t\r\n]* (comment [ \t\r\n]*)* "$" [ \t\r\n]* (comment [ \t\r\n]*)* ident
+type-p      ::= type-np-p | functype
+type-np-p   ::= "$" [ \t\r\n]* (comment [ \t\r\n]*)* ident | "*" [ \t\r\n]* (comment [ \t\r\n]*)* type | "@" [ \t\r\n]* (comment [ \t\r\n]*)* "(" ptype [ \t\r\n]* (comment [ \t\r\n]*)* (":" [ \t\r\n]* (comment [ \t\r\n]*)* type [ \t\r\n]* (comment [ \t\r\n]*)*)? ")" | "@" [ \t\r\n]* (comment [ \t\r\n]*)* (type-w | type-np-p)
+functype    ::= "(" (ptype ([ \t\r\n]* (comment [ \t\r\n]*)* ";" [ \t\r\n]* (comment [ \t\r\n]*)* type)*)? [ \t\r\n]* (comment [ \t\r\n]*)* ")" [ \t\r\n]* (comment [ \t\r\n]*)* ":" [ \t\r\n]* (comment [ \t\r\n]*)* type
+ptype       ::= [ \t\r\n]* (comment [ \t\r\n]*)* (type-w | "$" [ \t\r\n]* (comment [ \t\r\n]*)* ident | "@" [ \t\r\n]* (comment [ \t\r\n]*)* "(" ptype [ \t\r\n]* (comment [ \t\r\n]*)* (":" [ \t\r\n]* (comment [ \t\r\n]*)* type [ \t\r\n]* (comment [ \t\r\n]*)*)? ")" | "@" [ \t\r\n]* (comment [ \t\r\n]*)* (type-w | type-np-p) | functype) | ([ \t\r\n]+ (comment [ \t\r\n]*)* | comment [ \t\r\n]* (comment [ \t\r\n]*)*) "*" [ \t\r\n]* (comment [ \t\r\n]*)* type
+scalar      ::= ("u8" | "u16" | "u32" | "u64" | "i8" | "i16" | "i32" | "i64" | "f32" | "f64" | "bool" | "str" | "byte" | "void") (= [^a-zA-Z0-9])
+literal     ::= literal-w | string
+literal-w   ::= float | int | "true" | "false"
+int         ::= ("0" [xX] [0-9a-fA-F]+ | "0" [bB] [01]+ | [0-9]+) (= [^a-zA-Z0-9])
+float       ::= [0-9]+ "." [0-9]+ (= [^a-zA-Z0-9])
+string      ::= "\"" ([^"\\] | "\\" ["\\ntr0] | "\\x" [0-9a-fA-F] [0-9a-fA-F] | "\\(" interp ")")* "\""
+interp      ::= ([^()] | "(" interp ")")*
+typeident   ::= [A-Z] [a-zA-Z0-9]* (= [^a-zA-Z0-9])
+ident       ::= ([a-z] | word | "fn") (= [^a-zA-Z0-9])
+vname       ::= ([a-z] | word) (= [^a-zA-Z0-9])
+cname       ::= ([a-eg-hj-ln-su-z] | word | "fn") (= [^a-zA-Z0-9])
+word        ::= [cdghjkn-qu-z] [a-zA-Z0-9]+ | "a" word-a | "b" word-b | "e" word-e | "f" word-f | "i" word-i | "l" word-l | "m" word-m | "r" word-r | "s" word-s | "t" word-t
+word-a      ::= [0-9A-Za-rt-z] [a-zA-Z0-9]* | "s" [a-zA-Z0-9]+
+word-b      ::= [0-9A-Za-qs-z] [a-zA-Z0-9]* | "r" [a-zA-Z0-9]+
+word-e      ::= [0-9A-Za-km-z] [a-zA-Z0-9]* | "l" [a-zA-Z0-9]+
+word-f      ::= [0-9A-Zb-mo-z] [a-zA-Z0-9]* | "n" [a-zA-Z0-9]+ | "a" word-fa
+word-fa     ::= "" | [0-9A-Za-km-z] [a-zA-Z0-9]* | "l" word-fal
+word-fal    ::= "" | [0-9A-Za-rt-z] [a-zA-Z0-9]* | "s" word-fals
+word-fals   ::= "" | [0-9A-Za-df-z] [a-zA-Z0-9]* | "e" [a-zA-Z0-9]+
+word-i      ::= [0-9A-Za-eg-z] [a-zA-Z0-9]* | "f" [a-zA-Z0-9]+
+word-l      ::= [0-9A-Za-df-oq-z] [a-zA-Z0-9]* | "p" [a-zA-Z0-9]+ | "e" word-le
+word-le     ::= "" | [0-9A-Za-su-z] [a-zA-Z0-9]* | "t" [a-zA-Z0-9]+
+word-m      ::= [0-9A-Za-sv-z] [a-zA-Z0-9]* | "t" [a-zA-Z0-9]+ | "u" word-mu
+word-mu     ::= "" | [0-9A-Za-su-z] [a-zA-Z0-9]* | "t" [a-zA-Z0-9]+
+word-r      ::= [0-9A-Za-su-z] [a-zA-Z0-9]* | "t" [a-zA-Z0-9]+
+word-s      ::= [0-9A-Zabd-z] [a-zA-Z0-9]* | "c" [a-zA-Z0-9]+
+word-t      ::= [0-9A-Za-qs-z] [a-zA-Z0-9]* | "r" word-tr
+word-tr     ::= "" | [0-9A-Za-tv-z] [a-zA-Z0-9]* | "u" word-tru
+word-tru    ::= "" | [0-9A-Za-df-z] [a-zA-Z0-9]* | "e" [a-zA-Z0-9]+
+comment     ::= "(*" (cbody-n comment)* cbody "*)"
+cbody       ::= cchunk* "*"*
+cbody-n     ::= cchunk* ("*"+ | "*"* "("+)?
+cchunk      ::= [^(*] | "("+ [^(*] | "*"+ ([^()*] | "("+ [^(*])
