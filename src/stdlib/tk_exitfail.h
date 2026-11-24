@@ -37,8 +37,13 @@
  *     A status whose low 8 bits are 0 (256, …) would exit 0 and counts as 0;
  *   - os.exit(0) after a failure exits 1 as well, with the same line: os.exit
  *     is _exit() and skips atexit handlers, so tk_os_exit calls
- *     tk_exitfail_atexit() itself for a status of 0, and process.exit
- *     (process_glue.c tk_process_exit_w, 127.532) does the same;
+ *     tk_exitfail_before_exit(status) first, and process.exit
+ *     (process_glue.c tk_process_exit_w, 127.532) does the same.  That
+ *     helper applies main's rule: any status whose low 8 bits are 0 (0, 256,
+ *     512, -256, …) counts as 0, so os.exit(256) after a failure exits 1
+ *     with the line, as main returning 256 does (127.536).  With NO recorded
+ *     failure such a status is left to _exit(), which truncates it to 0 —
+ *     again exactly what main returning 256 does;
  *   - handlers registered BEFORE the first failure do not run, because the
  *     handler ends the process with _exit().  In this tree that is
  *     tk_err_release (frees one buffer) and, under ASan, the leak check;
@@ -91,6 +96,15 @@ TK_EXITFAIL_WEAK void tk_exitfail_atexit(void)
     fflush(stderr);
     if (tk_exit_report) tk_exit_report();
     _exit(status);
+}
+
+/* 127.536: called by os.exit and process.exit just before their _exit().
+ * The status _exit() will report is the low 8 bits of `status`; when those
+ * are 0 a recorded failure must not be lost, so this runs the handler (which
+ * returns when nothing was recorded).  Same rule as main's return above. */
+TK_EXITFAIL_WEAK void tk_exitfail_before_exit(long long status)
+{
+    if ((status & 0xff) == 0) tk_exitfail_atexit();
 }
 
 /* Record a failure.  `reason` must outlive the process (a literal). */
