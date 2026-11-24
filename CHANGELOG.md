@@ -469,6 +469,16 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
 
 - **std.infer's streaming loader refuses instead of returning a handle that is never loaded** (136.78). In a llama.cpp build (`TK_HAVE_LLAMACPP`), `tk_infer_load_streaming` returned success with a handle whose model and context stayed NULL, because its layer loop is a TODO: `tk_infer_is_loaded` said 0 and every `generate` / `embed` on it failed after a load that had succeeded. After the directory and shard checks (code -1) it now returns `is_err=1`, code -2 ("not implemented"), no handle and no prefetch thread; the prefetch machinery is kept behind `TK_INFER_STREAM_LAYER_LOOP`. The stub core and this repository's glue already failed and are unchanged, so no toke program changes behaviour. `docs/stdlib/infer.md` documents streaming as incomplete. Test: C2220.
 
+- **`process.exit(0)` after a recorded failure exits `1`, as `os.exit(0)` does** (127.532).
+  A failed `test.eq` / `test.ok` / `test.assert*` (or an `http.servetls` that
+  could not start) is recorded and makes the process exit `1` (127.231), and
+  `os.exit(0)` honoured that; `process.exit` called `_exit()` directly, so
+  `test.eq(1;2); process.exit(0)` exited `0` with no
+  `DIAGNOSTIC: kind=exit_status` line (also on v3.2.0). It now prints that
+  line and exits `1`, and under `TK_MEM_STATS=1` prints the report once, like
+  `os.exit(0)`. A non-zero status is unchanged. Survey of the other exit paths
+  in `docs/stdlib/process.md`. Test: C2270.
+
 ### Added — runtime: `TK_MEM_STATS=1` allocation report at exit (127.529)
 
 - **`TK_MEM_STATS=1` makes a toke program print one allocation report line to

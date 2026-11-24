@@ -452,6 +452,26 @@ def diagnostic_facts():
     }
 
 
+def pattern_facts():
+    """Story 131.145: the pattern catalogue, counted rather than retyped.
+
+    The canonical paragraph names the catalogue's size ("a 47-pattern
+    catalogue"), and it went stale silently when str-char-read made the
+    catalogue 47 entries: nothing derived the number. Rule 4 of
+    check_metrics_claims.py now reads `patterns_catalogue_entries` from here.
+    """
+    entries = json.loads(_read(os.path.join(
+        ROOT, "patterns", "catalogue.json")))["entries"]
+    status = [e["verdict"]["status"] for e in entries]
+    return {
+        "patterns_catalogue_entries": len(entries),
+        "patterns_catalogue_families": len({e["family"] for e in entries}),
+        "patterns_provisional": status.count("provisional"),
+        "patterns_blocked": status.count("blocked"),
+        "patterns_hot_path": sum(1 for e in entries if e["verdict"]["hot_path"]),
+    }
+
+
 def corpus_facts():
     out = {}
     freeze = os.path.join(CORPUS, "regen", "freeze", "freeze_129_summary.json")
@@ -611,6 +631,16 @@ COMMANDS = {
         "jq .total ../toke-corpus/regen/freeze/freeze_129_summary.json",
     "corpus_records_v02_2026_04":
         "jq .total_entries ../toke-corpus/corpus/manifest.json",
+    "patterns_catalogue_entries":
+        "jq '.entries | length' patterns/catalogue.json",
+    "patterns_catalogue_families":
+        "jq '[.entries[].family] | unique | length' patterns/catalogue.json",
+    "patterns_provisional":
+        "jq '[.entries[] | select(.verdict.status == \"provisional\")] | length' patterns/catalogue.json",
+    "patterns_blocked":
+        "jq '[.entries[] | select(.verdict.status == \"blocked\")] | length' patterns/catalogue.json",
+    "patterns_hot_path":
+        "jq '[.entries[] | select(.verdict.hot_path != null)] | length' patterns/catalogue.json",
     "epics":
         "grep -oE '^#{2,3} Epic [0-9]+' docs/progress.md | awk '{print $3}' | sort -u | wc -l",
     "stories":
@@ -633,6 +663,8 @@ CHECKED = [
     "conformance_cases_total", "diagnostic_codes_documented",
     "diagnostic_codes_in_src", "corpus_records_v04_frozen",
     "corpus_records_v02_2026_04",
+    "patterns_catalogue_entries", "patterns_catalogue_families",
+    "patterns_provisional", "patterns_blocked", "patterns_hot_path",
     # `epics` and `stories` are deliberately NOT gated: they move with every
     # commit to docs/progress.md, so pinning them in the table would fail CI on
     # unrelated work. The table prints them with a date and the command; rule 4
@@ -644,8 +676,8 @@ CHECKED = [
 def collect():
     facts = {}
     for fn in (charset_facts, keyword_facts, grammar_facts, stdlib_facts,
-               conformance_facts, diagnostic_facts, corpus_facts, tracker_facts,
-               repo_facts):
+               conformance_facts, diagnostic_facts, pattern_facts, corpus_facts,
+               tracker_facts, repo_facts):
         facts.update(fn())
     return facts
 
