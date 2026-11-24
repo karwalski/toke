@@ -119,6 +119,9 @@ LoopStmt     = 'lp' '(' ( ( 'let' IDENT | IDENT ) '=' Expr ';' Expr ';'
 (* immutable let, a parameter, an mt arm binding, a module constant or an   *)
 (* import alias, E3011 when there is none (127.289; toke-spec-v0.4.md §K).  *)
 ArenaStmt    = '{' 'arena' StmtList '}' ;
+(* 127.527: like IfStmt and LoopStmt, an ArenaStmt may be followed by one   *)
+(* ';', which the parser consumes; `{arena ...}` and `{arena ...};` are the  *)
+(* same statement.                                                           *)
 
 ExprStmt     = Expr ';' ;
 
