@@ -563,11 +563,16 @@ const char *toon_from_json(const char *json) {
         nrows++;
         for (int mi = 0; mi < nm; mi++) free(mem[mi].key);
         if (single) break;
-        /* next object element; skip anything that is not an object */
+        /* next object element; skip anything that is not an object.
+         * 127.543: jskip_val returns a scalar's end, and a stray '}' (or
+         * any byte jws does not skip but a scalar stops at) IS its own end,
+         * so `[{"a":1}}` never advanced and this loop spun forever.  Every
+         * pass now consumes at least one byte. */
         p = jws(after);
         while (*p == ',' || (*p && *p != '{' && *p != ']')) {
             if (*p == ',') { p = jws(p + 1); continue; }
-            p = jws(jskip_val(p));
+            const char *q = jskip_val(p);
+            p = jws(q > p ? q : p + 1);
         }
     }
 

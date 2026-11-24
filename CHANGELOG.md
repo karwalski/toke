@@ -251,6 +251,16 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   `http_cache_stale_if_error`'s `METHOD|URI` (a 1024-byte stack buffer), are
   now allocated to their full length; matching stays exact (127.514). Nothing
   in the tree calls `http_cache_*`. Test: C2160.
+- **`toon.fromjson` terminates on every input** (127.543, a denial of
+  service). After each array element the converter skips what is not the next
+  object, and a stray `}` at array level made that skip consume nothing, so
+  `[{"a":1}}` never returned (found by the security nightly's libFuzzer run as
+  a 1201 s timeout on a 50-byte input). Every pass of the skip now consumes at
+  least one byte: the stray byte is dropped like any other non-object element,
+  so `[{"a":1}},{"a":2}]` converts to the two rows `[{"a":1},{"a":2}]` does, and
+  the conversion is linear in the input. Well-formed JSON converts unchanged.
+  Test: C2290; the input is kept as
+  `test/fuzz/corpus-adversarial/toon_from_json_stray_close_127543.json`.
 
 ### Build and CI gates
 
