@@ -433,7 +433,17 @@ static const char *json_skip_value(const char *p) {
     return p;
 }
 
-/* Recursive JSON-to-YAML with indentation */
+/* Recursive JSON-to-YAML with indentation.
+ *
+ * 127.542: every loop iteration below must consume input.  An element that
+ * is none of { [ " and no literal json_skip_value knows (the fuzz input
+ * `{"b":[1,2@]}`: '@'), and any element past the YAML_MAX_INDENT depth cap,
+ * comes back with *pp unmoved; the sequence loop then saw the same byte, not
+ * ']', and appended "\n- " forever (libFuzzer OOM at 2 GiB).  Each loop now
+ * stops when an element made no progress, so the work is linear in the input
+ * and the output is bounded by it (at most YAML_MAX_INDENT + a few bytes per
+ * input byte).  Malformed JSON still converts as far as it is well formed,
+ * as before. */
 static void json_to_yaml_r(const char **pp, TkStrBuf *ob, int indent) {
     if (indent > YAML_MAX_INDENT) return;   /* 121.6: bound recursion depth */
     const char *p = json_skip_ws(*pp);
@@ -459,7 +469,9 @@ static void json_to_yaml_r(const char **pp, TkStrBuf *ob, int indent) {
             if (*p == ':') p++;
             p = json_skip_ws(p);
             /* Value */
+            const char *before = p;
             json_to_yaml_r(&p, ob, indent + 2);
+            if (p == before) break;   /* 127.542: no progress -- stop */
             p = json_skip_ws(p);
             if (*p == ',') p++;
         }
@@ -475,7 +487,9 @@ static void json_to_yaml_r(const char **pp, TkStrBuf *ob, int indent) {
         while (*p && *p != ']') {
             p = json_skip_ws(p);
             strbuf_appendf(ob, "\n%*s- ", indent, "");
+            const char *before = p;
             json_to_yaml_r(&p, ob, indent + 2);
+            if (p == before) break;   /* 127.542: no progress -- stop */
             p = json_skip_ws(p);
             if (*p == ',') p++;
         }

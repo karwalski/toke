@@ -195,6 +195,19 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
 
 ### Security fixes
 
+- **`yaml.fromjson` always returns** (127.542, a denial of service). A 35-byte
+  malformed flow mapping found by the security nightly's libFuzzer run
+  (`crash-yaml-oom-bcd1502b`: libFuzzer died at a 2 GiB malloc; the standalone
+  replay never returned) held the converter in a loop: the sequence loop
+  appended `"\n- "` for an element that consumed no input -- a byte that is no
+  JSON value (`[1,2@]`) or any element nested past the 256-level depth cap
+  (`[` x 400) -- and then saw the same byte again, forever, growing its output
+  without bound. Each loop now stops at an element that made no progress, so
+  the work is linear in the input and the output bounded by it. Well-formed
+  JSON converts to exactly the same text as before; malformed JSON still
+  converts as far as it is well formed. Test: C2285; the inputs are kept as
+  `test/fuzz/corpus-adversarial/yaml_flow_seq_no_progress_127542.json` and
+  `yaml_deep_seq_past_cap_127542.json`, which `make fuzz-smoke` replays.
 - **`tkc` no longer reads freed memory when it warns that `pkg.lock` is stale**
   (127.449). A build or `--check` of a program with a `pkg.*` import whose
   `pkg.lock` no longer matches `pkg.toml` formatted W9010's dependency name from
