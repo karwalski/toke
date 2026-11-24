@@ -327,6 +327,27 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   no existing lexeme file had one. The new numbers and a corrected sentence about
   `own_token_disallowed` are in the 2026-11-25 addendum to
   `docs/about/reviews/mask-cost-2026-11-24.md`.
+- **`make bench-mask-cost-check` exercises every alternative of the tuned Python forms,
+  and a mutation pass measures it** (131.149). The agreement set (383 `tkc --python-view`
+  programs, 27 traps, 3447 single-edit mutants) contained no `**`, so deleting `**` from
+  the operator lexeme of `python-subset-lexeme.lark` still agreed on 3857 of 3857. The
+  new `scripts/grammar_mutation.py` deletes one alternative at a time, in every rule and
+  every regex lexeme of a Lark or GBNF grammar, and counts the deletions some agreement
+  input notices. `make bench-mask-cost-mutation` (`python_subset_gbnf.py --mutation`,
+  slow, not a gate) scores both tuned forms. Before: 305 of 1152 deletions killed in
+  `python-subset-lexeme.lark` (fixed-string lexeme alternatives 21 of 37) and 300 of 1107
+  in `python-subset-xgr.gbnf`. `python_subset_gbnf.py` now carries 30 hand-written accept
+  cases (operators, string kinds and escapes, numbers, augmented assignment, decorators,
+  `try` forms, `global` / `nonlocal`, lambda, slices, patterns, the identifier trie, and
+  every compound statement at each indentation level). `--check` fails unless
+  `python-subset.gbnf` (XGrammar and `gbnf_earley`) and `ast.parse` accept each one.
+  After: 1142 of 1152 and 1107 of 1107 killed. The 10 survivors are in `TSTR` / `TSTRQ`,
+  terminals no rule reachable from `root` uses, which the pass reports as equivalent.
+  `make bench-mask-cost-check` now agrees on 3887 of 3887 inputs. No grammar changed.
+  For toke (report only, `scripts/grammar_mutation.py --toke`): 260 of 502 deletions in
+  `toke-lexeme.lark` and 225 of 320 in `toke-xgr.gbnf` are killed by
+  `test/gbnf/fragments.json`; adding fragments is 131.150. Details: limit 4 in
+  `docs/about/reviews/mask-cost-2026-11-24.md`.
 
 - **`make fuzz-smoke` replays its inputs under libFuzzer** (127.480). It passed
   libFuzzer a seed directory plus adversarial files, a mix libFuzzer refuses
