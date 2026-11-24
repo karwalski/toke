@@ -63,7 +63,7 @@ Because §1.3 releases almost nothing, a program's resident memory grows with th
 | A closure environment | Nothing once the last reference is released (§1.3 item 1) | Zero |
 | A literal, a module-level constant | One copy, for the program's lifetime | Static (§1.4, §2.6) |
 
-The unit of the budget is **bytes allocated per iteration** (sealed-heap bytes plus `malloc` bytes minus freed bytes), not peak resident memory. Peak resident memory varies between identical runs on some platforms. The measurement method and the reference figures for a template workload (ooke's lexer and renderer) are in `docs/decisions/127.299-function-arena.md` §1, §6 and §7.
+The unit of the budget is **bytes allocated per iteration** (sealed-heap bytes plus `malloc` bytes minus freed bytes), not peak resident memory. Peak resident memory varies between identical runs on some platforms. The measurement method and the reference figures for a template workload (ooke's lexer and renderer) are in `docs/decisions/127.299-function-arena.md` §1, §6 and §7. A program reports its own counters when it runs with `TK_MEM_STATS=1`: one line on stderr at exit, described with the harness recipe in `docs/runtime-abi.md` §10.1.
 
 ---
 

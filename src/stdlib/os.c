@@ -172,6 +172,7 @@ int64_t tk_os_exit(int64_t status) {
      * be lost by os.exit(0).  tk_exitfail_atexit() returns when there is
      * none; otherwise it reports and exits 1. */
     if (status == 0) tk_exitfail_atexit();
+    if (tk_exit_report) tk_exit_report();   /* 127.529: TK_MEM_STATS */
     _exit((int)status);
     return 0; /* unreachable */
 }

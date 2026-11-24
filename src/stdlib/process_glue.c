@@ -10,6 +10,7 @@
 #include "capabilities.h"   /* 124.4c: process.spawn capability gate */
 #include "tk_runtime.h"     /* 127.241: tk_current_error + tk_err_box (127.109) */
 #include "tk_strhdr.h"  /* 127.295: sealed strings, tk_strlen */
+#include "tk_exitfail.h" /* 127.529: tk_exit_report before _exit */
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -184,6 +185,7 @@ int64_t tk_process_isalive_w(int64_t pid) {
     return (int64_t)process_is_running(h);
 }
 int64_t tk_process_exit_w(int64_t code) {
+    if (tk_exit_report) tk_exit_report();   /* 127.529: TK_MEM_STATS */
     _exit((int)code);
     return 0;
 }
