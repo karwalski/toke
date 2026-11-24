@@ -1,0 +1,60 @@
+(* test_127_548.tk -- story 127.548: a function value handed to the array
+ * combinators (map/filter/reduce/fold/sort) reaches the C runtime through a
+ * C-ABI adapter that returns a well-defined i64.
+ *
+ * Before the fix the runtime called the toke function directly as
+ * `int64_t f(int64_t)`.  A `bool` predicate (fastcc i1) defines only bit 0
+ * of the return register on x86-64, so filter kept rejected elements
+ * (`@(0-3;7;0;9).filter(&pos)` gave [-3,7,9] on linux/amd64, CI run
+ * 45433635073); an f64 function returned in a float register the runtime
+ * never read (wrong on arm64 too); and a closure value (env+1) was called as
+ * code (SIGBUS on arm64).  Every case below prints PASS/FAIL. *)
+m=test.t127548;
+i=io:std.io;
+i=j:std.json;
+i=s:std.str;
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");got)) };
+  <0
+};
+
+f=pos(x:i64):bool{<x>0};
+f=even(x:i64):bool{<x%2==0};
+f=two(x:i64):i64{if(x>0){<2};<0};
+f=dbl(x:f64):f64{<x*2.0};
+f=anybig(acc:bool;x:i64):bool{<acc||x>8};
+f=add(a:i64;b:i64):i64{<a+b};
+f=desc(a:i64;b:i64):i64{<b-a};
+f=keep(xs:@i64;p:(i64):bool):@i64{<xs.filter(p)};
+f=f0(a:@f64):f64{<a.get(0)};
+
+f=main():$i64{
+  let xs=@(0-3;7;0;9;0-8;4);
+  cks("filter-bool-fn";j.enc(xs.filter(&pos));"[7,9,4]");
+  cks("filter-bool-fn-neg-only";j.enc(@(0-1;0-2;0-3).filter(&pos));"[]");
+  cks("filter-bool-even";j.enc(xs.filter(&even));"[0,-8,4]");
+  cks("map-bool-fn";j.enc(xs.map(&pos));"[0,1,0,1,0,1]");
+  cks("filter-i64-pred-2";j.enc(xs.filter(&two));"[7,9,4]");
+  cks("filter-bool-closure";j.enc(xs.filter(fn(x:i64):bool{<x>0}));"[7,9,4]");
+  let k=5;
+  cks("filter-bool-closure-capture";j.enc(xs.filter(fn(x:i64):bool{<x>k}));"[7,9]");
+  let big=fn(x:i64):bool{<x>k};
+  cks("filter-bool-closure-local";j.enc(xs.filter(big));"[7,9]");
+  cks("filter-bool-closure-local-again";j.enc(xs.filter(big));"[7,9]");
+  let g=&pos;
+  cks("filter-fnref-local";j.enc(xs.filter(g));"[7,9,4]");
+  cks("toke-side-fnref-call";if(g(0-3)){"t"}el{"f"};"f");
+  cks("filter-fn-param";j.enc(keep(xs;&pos));"[7,9,4]");
+  cks("filter-fn-param-closure";j.enc(keep(xs;fn(x:i64):bool{<x<0}));"[-3,-8]");
+  cks("reduce-bool-acc";if(xs.reduce(false;&anybig)){"t"}el{"f"};"t");
+  cks("reduce-bool-acc-none";if(@(1;2).reduce(false;&anybig)){"t"}el{"f"};"f");
+  cks("fold-i64";j.enc(xs.fold(0;&add));"9");
+  cks("sort-fnref";j.enc(xs.sort(&desc));"[9,7,4,0,-3,-8]");
+  cks("sort-closure";j.enc(xs.sort(fn(a:i64;b:i64):i64{<a-b}));"[-8,-3,0,4,7,9]");
+  let fs=@(1.5;2.5);
+  let d0=f0(fs.map(&dbl));
+  cks("map-f64-fn";if(d0==3.0){"t"}el{"f"};"t");
+  <0
+};

@@ -190,7 +190,7 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 
 #define TKC_CREL_MAX 64   /* 124.0c: function-value bindings with a release slot, per function */
 #define TKC_LOV_NAMES 64   /* 127.252 (1): overflowing local names deduped per function */
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char *str_globals; int str_globals_len; int str_globals_cap; /* 138.14: grown on demand — a fixed 64 KB buffer cut the IR inside a constant and toke exited 0 */ int str_globals_oom; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char (*clos_lname)[NAME_BUF]; const Node **clos_lnode; int *clos_lser; int clos_lcount; int clos_lcap; /* 127.224 item 8: grown on demand — a fixed 64 dropped the 65th closure-bound local in a module, whose call then lowered as its argument (silent wrong value) */ /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char (*fref_lname)[NAME_BUF]; const Node **fref_lnode; int fref_lcount; int fref_lcap; /* closure-bound locals are keyed by the f= they were bound in: clos_lser[i] is that function's serial, fn_serial the current one, in_lifted set while a lifted closure body is emitted */ int fn_serial; int in_lifted; /* 124.0c item 3: closure-bound lets of the current f= whose env is released at its exits (see compute_closure_releases) */ const Node *crel_init[TKC_CREL_MAX]; int crel_count; /* 124.0c item 3: the LLVM name each slot's binding got, so an assignment finds its slot */ char crel_lname[TKC_CREL_MAX][NAME_BUF]; /* 124.0c item 3: locals of the current function that hold a function value (LLVM names), and the one name read in a borrowing position (emit_borrowed) */ char (*fnv_name)[NAME_BUF]; int fnv_count; int fnv_cap; const Node *fnv_borrow; /* 127.245: `<mt ..` in a T!$E fn whose arms yield the error value: that match, and the i64 slot its error-valued arms set to 1 */ const Node *mt_ret_match; int mt_ret_slot; /* 127.252 (1): demand past the max_locals caps (pointer locals, local types, name aliases) in the current function, reported ONCE at its end by locals_cap_flush -- previously one unlocated E9010 per overflowing local. lov_name dedupes overflowing local-type names so a re-set name is not counted twice; past TKC_LOV_NAMES distinct names the count stops growing, so the reported need stays a lower bound. */ int ptr_over, local_over, alias_over; char lov_name[TKC_LOV_NAMES][NAME_BUF]; int lov_count; /* 127.310: the module's own source, which a constant's literal lives in (c->src is swapped while a string interpolation is lowered) */ const char *mod_src; } Ctx;
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char *str_globals; int str_globals_len; int str_globals_cap; /* 138.14: grown on demand — a fixed 64 KB buffer cut the IR inside a constant and toke exited 0 */ int str_globals_oom; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char (*clos_lname)[NAME_BUF]; const Node **clos_lnode; int *clos_lser; int clos_lcount; int clos_lcap; /* 127.224 item 8: grown on demand — a fixed 64 dropped the 65th closure-bound local in a module, whose call then lowered as its argument (silent wrong value) */ /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; /* 135.16a: 1 = the slot was minted at a non-fallible `let` because a later assignment is fallible; only an error-channel (uce) assignment may activate it */ unsigned char fall_pre[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; /* 124.0c: locals bound to a function reference (`let g=&add`), per function, so `g(args)` lowers as an indirect call through the stored pointer rather than a call of a global named @g */ char (*fref_lname)[NAME_BUF]; const Node **fref_lnode; int fref_lcount; int fref_lcap; /* closure-bound locals are keyed by the f= they were bound in: clos_lser[i] is that function's serial, fn_serial the current one, in_lifted set while a lifted closure body is emitted */ int fn_serial; int in_lifted; /* 124.0c item 3: closure-bound lets of the current f= whose env is released at its exits (see compute_closure_releases) */ const Node *crel_init[TKC_CREL_MAX]; int crel_count; /* 124.0c item 3: the LLVM name each slot's binding got, so an assignment finds its slot */ char crel_lname[TKC_CREL_MAX][NAME_BUF]; /* 124.0c item 3: locals of the current function that hold a function value (LLVM names), and the one name read in a borrowing position (emit_borrowed) */ char (*fnv_name)[NAME_BUF]; int fnv_count; int fnv_cap; const Node *fnv_borrow; /* 127.245: `<mt ..` in a T!$E fn whose arms yield the error value: that match, and the i64 slot its error-valued arms set to 1 */ const Node *mt_ret_match; int mt_ret_slot; /* 127.252 (1): demand past the max_locals caps (pointer locals, local types, name aliases) in the current function, reported ONCE at its end by locals_cap_flush -- previously one unlocated E9010 per overflowing local. lov_name dedupes overflowing local-type names so a re-set name is not counted twice; past TKC_LOV_NAMES distinct names the count stops growing, so the reported need stays a lower bound. */ int ptr_over, local_over, alias_over; char lov_name[TKC_LOV_NAMES][NAME_BUF]; int lov_count; /* 127.310: the module's own source, which a constant's literal lives in (c->src is swapped while a string interpolation is lowered) */ const char *mod_src; /* 127.548: the C-ABI adapters (__tk_fvc_<key>) the array combinators were handed in this module, emitted once each at the module tail */ char (*fvc_key)[32]; int fvc_count; int fvc_cap; } Ctx;
 
 /*
  * box_alloc (127.109) — which allocator the box about to be emitted comes
@@ -3373,6 +3373,215 @@ static const char *fnv_llvm_ty(const Type *t) {
     }
 }
 
+/* ── 127.548: C-ABI adapters for the array combinator runtime ───────────
+ *
+ * `xs.map(f)` / `filter` / `reduce` / `fold` / `sort` hand a function value to
+ * C (collections_glue.c), which calls it.  The value used to go across bare:
+ * the address of a fastcc toke function (or a closure, env+1) that C called
+ * as `int64_t (*)(int64_t)`.  That holds only for a function that really is
+ * `i64 (i64)`.  A `bool` predicate is `fastcc i1 (i64)`: x86-64 defines bit 0
+ * of %al and nothing above it, so `@(0-3;7;0;9).filter(&pos)` kept the -3
+ * (CI run 45433635073, test_127_44 on linux/amd64) — arm64 happened to clear
+ * the register.  An f64 function returns in xmm0/d0, not rax/x0, and reads its
+ * f64 parameter from there too; and a closure value (env+1) is not code at
+ * all, so C jumped into the heap.
+ *
+ * The runtime now takes (fn, fv): `fn` is one of these adapters, C ABI,
+ *   define internal i64 @__tk_fvc_<key>(i64 %fv, i64 %a0 [, i64 %a1])
+ * and `fv` the function value itself.  The adapter narrows each i64 array
+ * slot to the parameter's type, calls the value exactly as the toke-side
+ * indirect call does (low bit set: closure, call env[0] with env; else a
+ * function address), and widens the result back to a well-defined i64 — zext
+ * of an i1, the bits of a double, zext/sext of a narrow int by its own
+ * signedness.  One adapter per distinct signature, emitted at the module
+ * tail.  The key is: calling convention (f = fastcc, x = C: an extern C
+ * function named by `&`), return code, the runtime arity, parameter codes. */
+static char fvc_code(const Type *t) {
+    if (!t) return 'l';
+    switch (t->kind) {
+    case TY_BOOL: return 'b';
+    case TY_F64: return 'd';
+    case TY_F32: return 'f';
+    case TY_VOID: return 'v';
+    case TY_I8: return 'c';  case TY_U8: return 'C';
+    case TY_I16: return 's'; case TY_U16: return 'S';
+    case TY_I32: return 'i'; case TY_U32: return 'I';
+    case TY_STR: case TY_ARRAY: case TY_MAP: case TY_STRUCT: case TY_PTR: return 'p';
+    default: return 'l';
+    }
+}
+static char fvc_code_llvm(const char *ty, int uns) {
+    if (!ty || !ty[0]) return 'l';
+    if (!strcmp(ty, "i1")) return 'b';
+    if (!strcmp(ty, "double")) return 'd';
+    if (!strcmp(ty, "float")) return 'f';
+    if (!strcmp(ty, "void")) return 'v';
+    if (!strcmp(ty, "i8")) return uns ? 'C' : 'c';
+    if (!strcmp(ty, "i16")) return uns ? 'S' : 's';
+    if (!strcmp(ty, "i32")) return uns ? 'I' : 'i';
+    if (ty[strlen(ty) - 1] == '*') return 'p';
+    return 'l';
+}
+/* The LLVM type a code is called as.  A pointer-typed return is called as
+ * i64, as the toke-side function-value call does (the i64 return ABI). */
+static const char *fvc_llvm(char k, int is_ret) {
+    switch (k) {
+    case 'b': return "i1";
+    case 'd': return "double";
+    case 'f': return "float";
+    case 'v': return "void";
+    case 'c': case 'C': return "i8";
+    case 's': case 'S': return "i16";
+    case 'i': case 'I': return "i32";
+    case 'p': return is_ret ? "i64" : "i8*";
+    default: return "i64";
+    }
+}
+/* Resolve `&name` / `&alias.name` to the FnSig the NODE_FUNC_REF lowering
+ * takes the address of (NULL when it is not a known function). */
+static const FnSig *fvc_ref_sig(Ctx *c, const Node *n) {
+    char tb[256]; tok_cp(c->src, n, tb, sizeof tb);
+    if (n->child_count >= 1 && n->children[0]) {
+        char mth[128]; tok_cp(c->src, n->children[0], mth, sizeof mth);
+        char mangled[256]; mangled[0] = '\0';
+        for (int ii = 0; ii < c->import_count; ii++) {
+            if (strcmp(c->imports[ii].alias, tb)) continue;
+            const char *mod = c->imports[ii].module; int mp = 0;
+            for (int k = 0; mod[k] && mp < (int)sizeof(mangled) - 2; k++)
+                mangled[mp++] = (mod[k] == '.') ? '_' : mod[k];
+            if (mp < (int)sizeof(mangled) - 1) mangled[mp++] = '_';
+            mangled[mp] = '\0';
+            strncat(mangled, mth, sizeof(mangled) - strlen(mangled) - 1);
+            break;
+        }
+        if (!mangled[0]) snprintf(mangled, sizeof mangled, "%s", mth);
+        return lookup_fn(c, mangled);
+    }
+    if (!strcmp(tb, "main")) strcpy(tb, "tk_main");
+    mangle_fn_name(c, tb, sizeof tb);
+    return lookup_fn(c, tb);
+}
+/* Build the adapter key for function value `fv` handed to a combinator
+ * whose runtime calls it with `arity` i64 arguments, register it, and
+ * write the adapter's symbol into `sym`. */
+static void fvc_adapter(Ctx *c, const Node *fv, int arity, char *sym, int symsz) {
+    char key[32]; int kl = 0;
+    char cc = 'f', rk = 'l'; char pk[TKC_MAX_PARAMS]; int np = arity;
+    for (int i = 0; i < TKC_MAX_PARAMS; i++) pk[i] = 'l';
+    const FnSig *rs = (fv && fv->kind == NODE_FUNC_REF) ? fvc_ref_sig(c, fv) : NULL;
+    if (rs && !rs->is_internal && fv->child_count == 0) cc = 'x';
+    if (fv && tk_type_is_fnval(fv->rtype)) {
+        const Type *ft = fv->rtype;
+        rk = fvc_code(ft->elem);
+        np = ft->field_count;
+        for (int i = 0; i < np && i < TKC_MAX_PARAMS; i++) pk[i] = fvc_code(ft->field_types[i]);
+    } else if (rs) {
+        rk = fvc_code_llvm(rs->ret, rs->xmod_uns);
+        np = rs->param_count;
+        for (int i = 0; i < np && i < TKC_MAX_PARAMS; i++) pk[i] = fvc_code_llvm(rs->param_tys[i], 0);
+    }
+    if (np > TKC_MAX_PARAMS) np = TKC_MAX_PARAMS;
+    if (np > 9) np = 9;                 /* the key holds one digit of each count */
+    key[kl++] = cc; key[kl++] = rk; key[kl++] = (char)('0' + arity); key[kl++] = (char)('0' + np);
+    for (int i = 0; i < np && kl < (int)sizeof key - 1; i++) key[kl++] = pk[i];
+    key[kl] = '\0';
+    snprintf(sym, (size_t)symsz, "__tk_fvc_%s", key);
+    for (int i = 0; i < c->fvc_count; i++)
+        if (!strcmp(c->fvc_key[i], key)) return;
+    if (c->fvc_count == c->fvc_cap) {
+        int ncap = c->fvc_cap ? c->fvc_cap * 2 : 16;
+        char (*nk)[32] = (char (*)[32])arena_alloc(c->arena, (size_t)ncap * sizeof(*nk));
+        if (!nk) {
+            diag_emit(DIAG_ERROR, E9010, fv ? fv->start : 0, fv ? fv->line : 0, fv ? fv->col : 0,
+                      "compiler limit exceeded: out of memory while recording a combinator adapter",
+                      (const char *)NULL);
+            return;
+        }
+        if (c->fvc_count) memcpy(nk, c->fvc_key, (size_t)c->fvc_count * sizeof(*nk));
+        c->fvc_key = nk; c->fvc_cap = ncap;
+    }
+    snprintf(c->fvc_key[c->fvc_count++], 32, "%s", key);
+}
+/* One adapter call of the function value through pointer `%fp` (already
+ * cast); the result widened to i64 into `%r<tag>`. */
+static void fvc_emit_call(Ctx *c, const char *tag, const char *ccs, char rk,
+                          const char *fpv, int with_env, int np, const char *pk) {
+    const char *rty = fvc_llvm(rk, 1);
+    if (rk == 'v') fprintf(c->out, "  call %svoid %s(", ccs, fpv);
+    else fprintf(c->out, "  %%c%s = call %s%s %s(", tag, ccs, rty, fpv);
+    int first = 1;
+    if (with_env) { fputs("i8* %env", c->out); first = 0; }
+    for (int i = 0; i < np; i++) {
+        fprintf(c->out, "%s%s %%p%d", first ? "" : ", ", fvc_llvm(pk[i], 0), i);
+        first = 0;
+    }
+    fputs(")\n", c->out);
+    switch (rk) {
+    case 'v': fprintf(c->out, "  ret i64 0\n"); return;
+    case 'b': case 'C': case 'S': case 'I':
+        fprintf(c->out, "  %%r%s = zext %s %%c%s to i64\n", tag, rty, tag); break;
+    case 'c': case 's': case 'i':
+        fprintf(c->out, "  %%r%s = sext %s %%c%s to i64\n", tag, rty, tag); break;
+    case 'd':
+        fprintf(c->out, "  %%r%s = bitcast double %%c%s to i64\n", tag, tag); break;
+    case 'f':
+        fprintf(c->out, "  %%x%s = fpext float %%c%s to double\n", tag, tag);
+        fprintf(c->out, "  %%r%s = bitcast double %%x%s to i64\n", tag, tag); break;
+    default:
+        fprintf(c->out, "  ret i64 %%c%s\n", tag); return;
+    }
+    fprintf(c->out, "  ret i64 %%r%s\n", tag);
+}
+static void emit_fvc_adapters(Ctx *c) {
+    for (int k = 0; k < c->fvc_count; k++) {
+        const char *key = c->fvc_key[k];
+        char cc = key[0], rk = key[1];
+        int arity = key[2] - '0', np = key[3] - '0';
+        const char *pk = key + 4;
+        const char *ccs = cc == 'x' ? "" : "fastcc ";
+        const char *rty = fvc_llvm(rk, 1);
+        fprintf(c->out, "\n; 127.548: C-ABI adapter for a function value handed to an array combinator\n");
+        fprintf(c->out, "define internal i64 @__tk_fvc_%s(i64 %%fv", key);
+        for (int i = 0; i < arity; i++) fprintf(c->out, ", i64 %%a%d", i);
+        fputs(") nounwind {\nentry:\n", c->out);
+        for (int i = 0; i < np; i++) {
+            const char *pty = fvc_llvm(pk[i], 0);
+            if (i >= arity) {               /* more parameters than the runtime passes */
+                const char *z = pk[i] == 'b' ? "false" : pk[i] == 'p' ? "null"
+                              : (pk[i] == 'd' || pk[i] == 'f') ? "0.0" : "0";
+                fprintf(c->out, "  %%p%d = select i1 true, %s %s, %s %s\n", i, pty, z, pty, z);
+                continue;
+            }
+            switch (pk[i]) {
+            case 'b': fprintf(c->out, "  %%p%d = icmp ne i64 %%a%d, 0\n", i, i); break;
+            case 'd': fprintf(c->out, "  %%p%d = bitcast i64 %%a%d to double\n", i, i); break;
+            case 'f':
+                fprintf(c->out, "  %%q%d = bitcast i64 %%a%d to double\n", i, i);
+                fprintf(c->out, "  %%p%d = fptrunc double %%q%d to float\n", i, i); break;
+            case 'c': case 'C': case 's': case 'S': case 'i': case 'I':
+                fprintf(c->out, "  %%p%d = trunc i64 %%a%d to %s\n", i, i, pty); break;
+            case 'p': fprintf(c->out, "  %%p%d = inttoptr i64 %%a%d to i8*\n", i, i); break;
+            default:  fprintf(c->out, "  %%p%d = add i64 %%a%d, 0\n", i, i); break;
+            }
+        }
+        /* a closure (env+1, low bit set) or a function address — the test
+         * the toke-side function-value call makes */
+        fputs("  %tag = and i64 %fv, 1\n  %isc = icmp ne i64 %tag, 0\n"
+              "  br i1 %isc, label %clos, label %raw\n", c->out);
+        fputs("clos:\n  %ei = sub i64 %fv, 1\n  %env = inttoptr i64 %ei to i8*\n"
+              "  %eb = inttoptr i64 %ei to i64*\n  %fpi = load i64, i64* %eb\n", c->out);
+        fprintf(c->out, "  %%fpc = inttoptr i64 %%fpi to %s (i8*", rty);
+        for (int i = 0; i < np; i++) fprintf(c->out, ", %s", fvc_llvm(pk[i], 0));
+        fputs(")*\n", c->out);
+        fvc_emit_call(c, "1", "fastcc ", rk, "%fpc", 1, np, pk);
+        fprintf(c->out, "raw:\n  %%fpr = inttoptr i64 %%fv to %s (", rty);
+        for (int i = 0; i < np; i++) fprintf(c->out, "%s%s", i ? ", " : "", fvc_llvm(pk[i], 0));
+        fputs(")*\n", c->out);
+        fvc_emit_call(c, "2", ccs, rk, "%fpr", 0, np, pk);
+        fputs("}\n", c->out);
+    }
+}
+
 /* 127.8: classify the receiver of `.len` / `.len()`. Returns "str", "map", or
  * NULL (array / unknown → the legacy ptr[-1] header-word load). The checker's
  * rtype is authoritative; the backend's $str / __map__ local tags are the
@@ -5828,12 +6037,31 @@ static int emit_expr(Ctx *c, const Node *n)
                     obj_v = z;
                 }
                 int na_im = n->child_count - 1;
-                int coa[TKC_MAX_PARAMS + 1]; coa[0] = obj_v;
+                int coa[TKC_MAX_PARAMS + 2]; coa[0] = obj_v;
                 /* 127.383: a getor yielding a function value borrows its
                  * default (see map_getor_fnv) */
                 int getor_fnv = !strcmp(fn_im, "tk_map_getor_w") && map_getor_fnv(c, n);
                 int getor_drel = 0;
+                /* 127.548: the function value a combinator calls goes across
+                 * as (C-ABI adapter, the value), never bare — see fvc_adapter. */
+                int fvc_ar = (!strcmp(fn_im, "tk_arr_map") || !strcmp(fn_im, "tk_arr_filter")) ? 1
+                           : (!strcmp(fn_im, "tk_arr_reduce") || !strcmp(fn_im, "tk_arr_sort")) ? 2 : 0;
+                int fvc_extra = 0, fvc_rel = -1; const char *fvc_relt = "i64";
                 for (int i = 0; i < na_im && i + 1 < TKC_MAX_PARAMS; i++) {
+                    if (fvc_ar && i == na_im - 1 && i + 2 < TKC_MAX_PARAMS + 1) {
+                        const Node *fn_n = n->children[i+1];
+                        int fa = fnv_expr(c, fn_n);
+                        int fv = fa ? emit_borrowed(c, fn_n) : emit_expr(c, fn_n);
+                        const char *fty = expr_llvm_type(c, fn_n);
+                        if (fa && fnv_owned(c, fn_n)) { fvc_rel = fv; fvc_relt = fty; }
+                        fv = coerce_value(c, fv, fty, "i64");
+                        char asym[64]; fvc_adapter(c, fn_n, fvc_ar, asym, sizeof asym);
+                        int ap = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = ptrtoint i64 (i64%s)* @%s to i64\n",
+                                ap, fvc_ar == 2 ? ", i64, i64" : ", i64", asym);
+                        coa[i+1] = ap; coa[i+2] = fv; fvc_extra = 1;
+                        continue;
+                    }
                     int dfn = getor_fnv && i == 1 && fnv_expr(c, n->children[i+1]);
                     if (dfn) getor_drel = fnv_owned(c, n->children[i+1]);
                     int av = dfn ? emit_borrowed(c, n->children[i+1])
@@ -5857,7 +6085,7 @@ static int emit_expr(Ctx *c, const Node *n)
                     }
                     coa[i+1] = av;
                 }
-                int tot = na_im + 1;
+                int tot = na_im + 1 + fvc_extra;
                 if (!strcmp(fn_im, "tk_array_set_w") && na_im >= 1)
                     emit_set_bounds_check(c, coa[0], coa[1]);
                 t = next_tmp(c);
@@ -5867,6 +6095,7 @@ static int emit_expr(Ctx *c, const Node *n)
                     fprintf(c->out, " i64 %%t%d", coa[i]);
                 }
                 fputs(")\n", c->out);
+                if (fvc_rel >= 0) fnv_release(c, fvc_rel, fvc_relt);   /* 127.548: an owned closure literal */
                 if (getor_fnv) {                       /* 127.383 */
                     fnv_retain(c, t, "i64");
                     if (getor_drel && na_im >= 2) fnv_release(c, coa[2], "i64");
@@ -13438,6 +13667,7 @@ timeparts_done:
      * before the fwd-decl/string-global flushes so the forward-referenced
      * @__tk_closure_N symbols are defined at module scope). */
     emit_lifted_closures(&ctx);
+    emit_fvc_adapters(&ctx);   /* 127.548: after the closures, whose bodies may request one */
     locals_cap_flush(&ctx, NULL, "the module's top level");   /* 127.252 (1): anything left over */
 
     /* Flush forward declarations for cross-module user function calls */

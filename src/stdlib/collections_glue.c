@@ -497,65 +497,83 @@ int64_t tk_array_list_w(int64_t arr) { return arr; }
 
 /* ── Higher-order array functions (map/filter/reduce/sort) ───────────── */
 
-int64_t tk_arr_map(int64_t arr_i64, int64_t fn_ptr) {
-    typedef int64_t (*map_fn)(int64_t);
+/* 127.548: the compiler hands each of these a pair, never a bare function:
+ * `fn` is a C-ABI adapter it emitted for the value's signature
+ * (`int64_t adapter(int64_t fv, int64_t a0[, int64_t a1])`, llvm.c
+ * fvc_adapter) and `fv` the toke function value itself (a function address
+ * or a closure).  The adapter narrows each i64 slot to the parameter type,
+ * makes the toke call, and returns a well-defined i64.  A bare toke function
+ * cast to `int64_t (*)(int64_t)` was wrong for every non-i64 signature: a
+ * `bool` predicate defines only bit 0 of the return register on x86-64, so
+ * filter kept elements the predicate rejected.  A predicate is not masked
+ * here: any non-zero i64 is true (an i64 predicate returning 2 counts). */
+typedef int64_t (*tk_fv1_fn)(int64_t fv, int64_t a);
+typedef int64_t (*tk_fv2_fn)(int64_t fv, int64_t a, int64_t b);
+
+int64_t tk_arr_map(int64_t arr_i64, int64_t fn, int64_t fv) {
     int64_t *ptr = (int64_t *)(intptr_t)arr_i64;
     int64_t len = ptr[-1];
     int64_t h = tk_arr_alloc(len, len);
     if (!h) return arr_i64;
     int64_t *out = (int64_t *)(intptr_t)h;
-    map_fn f = (map_fn)(intptr_t)fn_ptr;
+    tk_fv1_fn f = (tk_fv1_fn)(intptr_t)fn;
     for (int64_t i = 0; i < len; i++)
-        out[i] = f(ptr[i]);
+        out[i] = f(fv, ptr[i]);
     return h;
 }
 
-int64_t tk_arr_filter(int64_t arr_i64, int64_t fn_ptr) {
-    typedef int64_t (*filter_fn)(int64_t);
+int64_t tk_arr_filter(int64_t arr_i64, int64_t fn, int64_t fv) {
     int64_t *ptr = (int64_t *)(intptr_t)arr_i64;
     int64_t len = ptr[-1];
     int64_t h = tk_arr_alloc(len, len);
     if (!h) return arr_i64;
     int64_t *out = (int64_t *)(intptr_t)h;
-    filter_fn f = (filter_fn)(intptr_t)fn_ptr;
+    tk_fv1_fn f = (tk_fv1_fn)(intptr_t)fn;
     int64_t out_len = 0;
     for (int64_t i = 0; i < len; i++) {
-        if (f(ptr[i]))
+        if (f(fv, ptr[i]))
             out[out_len] = ptr[i], out_len++;
     }
     tk_arr_setlen(h, out_len);
     return h;
 }
 
-int64_t tk_arr_reduce(int64_t arr_i64, int64_t init, int64_t fn_ptr) {
-    typedef int64_t (*reduce_fn)(int64_t, int64_t);
+int64_t tk_arr_reduce(int64_t arr_i64, int64_t init, int64_t fn, int64_t fv) {
     int64_t *ptr = (int64_t *)(intptr_t)arr_i64;
     int64_t len = ptr[-1];
-    reduce_fn f = (reduce_fn)(intptr_t)fn_ptr;
+    tk_fv2_fn f = (tk_fv2_fn)(intptr_t)fn;
     int64_t acc = init;
     for (int64_t i = 0; i < len; i++)
-        acc = f(acc, ptr[i]);
+        acc = f(fv, acc, ptr[i]);
     return acc;
 }
 
-typedef int64_t (*tk_arr_cmp_fn_t)(int64_t, int64_t);
-static tk_arr_cmp_fn_t tk_arr_sort_cmp_global;
+/* qsort's comparator carries no user data, so the pair is held here for the
+ * duration of one sort; the previous pair is restored after, so a comparator
+ * that itself sorts does not clobber the outer sort's. */
+static tk_fv2_fn tk_arr_sort_cmp_global;
+static int64_t   tk_arr_sort_fv_global;
 static int tk_arr_sort_qsort_cmp(const void *a, const void *b) {
     int64_t va = *(const int64_t *)a;
     int64_t vb = *(const int64_t *)b;
-    int64_t r = tk_arr_sort_cmp_global(va, vb);
+    int64_t r = tk_arr_sort_cmp_global(tk_arr_sort_fv_global, va, vb);
     return (r > 0) - (r < 0);
 }
 
-int64_t tk_arr_sort(int64_t arr_i64, int64_t cmp_ptr) {
+int64_t tk_arr_sort(int64_t arr_i64, int64_t fn, int64_t fv) {
     int64_t *ptr = (int64_t *)(intptr_t)arr_i64;
     int64_t len = ptr[-1];
     int64_t h = tk_arr_alloc(len, len);
     if (!h) return arr_i64;
     int64_t *out = (int64_t *)(intptr_t)h;
     if (len > 0) memcpy(out, ptr, (size_t)len * sizeof(int64_t));
-    tk_arr_sort_cmp_global = (tk_arr_cmp_fn_t)(intptr_t)cmp_ptr;
+    tk_fv2_fn saved_fn = tk_arr_sort_cmp_global;
+    int64_t   saved_fv = tk_arr_sort_fv_global;
+    tk_arr_sort_cmp_global = (tk_fv2_fn)(intptr_t)fn;
+    tk_arr_sort_fv_global  = fv;
     qsort(out, (size_t)len, sizeof(int64_t), tk_arr_sort_qsort_cmp);
+    tk_arr_sort_cmp_global = saved_fn;
+    tk_arr_sort_fv_global  = saved_fv;
     return h;
 }
 
