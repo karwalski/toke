@@ -820,10 +820,24 @@ char *tks_seal(char *p, size_t n)
     return p;
 }
 
+/* 127.529: TK_MEM_STATS.  Reads the counters the heap keeps anyway, so the
+ * report costs nothing while it is off.  tks_top may run past the end of the
+ * reservation once it is exhausted (each failed bump still adds). */
+void tks_mem_stats(size_t *handed_out, size_t *committed)
+{
+    *handed_out = __atomic_load_n(&tks_top, __ATOMIC_RELAXED);
+    *committed  = __atomic_load_n(&tks_committed, __ATOMIC_RELAXED);
+}
+
 #else /* !TKS_HEAP: every string is a malloc'd, unsealed C string */
 
 char *tks_alloc(size_t n) { return (char *)malloc(n + 1); }
 char *tks_seal(char *p, size_t n) { (void)n; return p; }
+void tks_mem_stats(size_t *handed_out, size_t *committed)
+{
+    *handed_out = 0;
+    *committed  = 0;
+}
 
 #endif /* TKS_HEAP */
 

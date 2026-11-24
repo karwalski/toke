@@ -469,6 +469,24 @@ Tests: `C1860`–`C1866`, `D605`–`D608` (`6055e9ca`, `c79119a7`, `e5678505`, `
 
 - **std.infer's streaming loader refuses instead of returning a handle that is never loaded** (136.78). In a llama.cpp build (`TK_HAVE_LLAMACPP`), `tk_infer_load_streaming` returned success with a handle whose model and context stayed NULL, because its layer loop is a TODO: `tk_infer_is_loaded` said 0 and every `generate` / `embed` on it failed after a load that had succeeded. After the directory and shard checks (code -1) it now returns `is_err=1`, code -2 ("not implemented"), no handle and no prefetch thread; the prefetch machinery is kept behind `TK_INFER_STREAM_LAYER_LOOP`. The stub core and this repository's glue already failed and are unchanged, so no toke program changes behaviour. `docs/stdlib/infer.md` documents streaming as incomplete. Test: C2220.
 
+### Added — runtime: `TK_MEM_STATS=1` allocation report at exit (127.529)
+
+- **`TK_MEM_STATS=1` makes a toke program print one allocation report line to
+  stderr as it exits** (127.529): `tk-mem-stats: v=1 pid=… sealed_bytes=…
+  sealed_committed=… region_released_bytes=0 malloc_calls=… calloc_calls=…
+  realloc_calls=… alloc_bytes=… free_calls=… freed_bytes=…
+  live_bytes_delta=…`. It is the counter source that ADR-0016's measurement
+  plan gates region slices on (bytes per iteration). It replaces the scratch
+  `tks_top` destructor and `DYLD_INSERT_LIBRARIES` interposer of the 127.299
+  harness. The report prints on a normal exit, a trap, `os.exit`,
+  `process.exit` and a recorded failure (a failed `test.eq`). It prints at
+  most once. The malloc fields come from libmalloc's `malloc_logger` hook and
+  read `na` off Darwin and in ASan builds. Counters are atomic, so every
+  thread is counted. With the variable unset nothing is installed: CPU time
+  on a 3M-iteration interpolation loop was 0.747 s median for both the base
+  and the candidate. Format and recipe: `docs/runtime-abi.md` §10.1. Test:
+  C2260.
+
 ### Changed — code generation: interpolation frees its number conversions (127.299)
 
 - **A string interpolation frees the number conversions it made** (127.299).

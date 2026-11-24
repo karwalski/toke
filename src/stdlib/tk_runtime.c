@@ -14,11 +14,13 @@
 #include "args.h"
 #include "capabilities.h"  /* 124.4a: capability broker init */
 #include "strbuf.h"        /* 127.229: JSON string escape/unescape */
+#include "tk_exitfail.h"    /* 127.529: tk_exit_report */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
 #include <ctype.h>
+#include <unistd.h>   /* 127.529: getpid */
 
 /* 114.41: side channel carrying a T!$E error's typed payload.  An error
  * return stores the box here and returns the 0 ok/err sentinel; the matching
@@ -185,7 +187,128 @@ static char *g_path_snapshot;
 
 const char *tk_path_snapshot(void) { return g_path_snapshot; }
 
+/* ── 127.529: TK_MEM_STATS=1 exit report ─────────────────────────────────────
+ * With TK_MEM_STATS=1 in the environment the program prints ONE line to
+ * stderr when it exits through exit() (a return from main, a trap):
+ *
+ *   tk-mem-stats: v=1 pid=N sealed_bytes=N sealed_committed=N
+ *     region_released_bytes=0 malloc_calls=N calloc_calls=N realloc_calls=N
+ *     alloc_bytes=N free_calls=N freed_bytes=N live_bytes_delta=N
+ *
+ * (one line; wrapped here), and also from os.exit, process.exit and a
+ * recorded failure's handler, which leave through _exit() (tk_exitfail.h).
+ * The fields are documented in runtime-abi.md §10.1.  Unset, nothing is
+ * installed: the only cost is one getenv in tk_runtime_init.  The malloc counters come from libmalloc's malloc_logger
+ * hook, which libmalloc tests on every call whether or not anyone set it, so
+ * setting it adds work only while the report is on; they are "na" where that
+ * hook does not exist (not Darwin) or does not fire (an ASan build, whose
+ * allocator replaces libmalloc's). */
+#if defined(__has_feature)
+#  if __has_feature(address_sanitizer)
+#    define TK_MS_ASAN 1
+#  endif
+#endif
+#if !defined(TK_MS_ASAN) && defined(__SANITIZE_ADDRESS__)
+#  define TK_MS_ASAN 1
+#endif
+#if defined(__APPLE__) && !defined(TK_MS_ASAN)
+#  define TK_MS_MALLOC 1
+#  include <malloc/malloc.h>
+#  include <stdint.h>
+typedef void (tk_malloc_logger_t)(uint32_t type, uintptr_t a1, uintptr_t a2,
+                                  uintptr_t a3, uintptr_t result, uint32_t skip);
+extern tk_malloc_logger_t *malloc_logger;   /* libsystem_malloc */
+#  define TK_ML_ALLOC   2u                  /* MALLOC_LOG_TYPE_ALLOCATE   */
+#  define TK_ML_DEALLOC 4u                  /* MALLOC_LOG_TYPE_DEALLOCATE */
+#  define TK_ML_CLEARED 64u                 /* MALLOC_LOG_TYPE_CLEARED    */
+static tk_malloc_logger_t *ms_prev_logger;
+static size_t ms_malloc, ms_calloc, ms_realloc, ms_alloc_bytes, ms_free, ms_freed;
+static size_t ms_live_start;
+
+static size_t ms_live_bytes(void)
+{
+    malloc_statistics_t st;
+    malloc_zone_statistics(NULL, &st);   /* every zone */
+    return st.size_in_use;
+}
+
+/* Called by libmalloc on the allocating thread: free() before the block is
+ * released (so malloc_size still sees it), malloc/calloc/realloc after. */
+static void ms_logger(uint32_t type, uintptr_t a1, uintptr_t a2, uintptr_t a3,
+                      uintptr_t result, uint32_t skip)
+{
+    if ((type & (TK_ML_ALLOC | TK_ML_DEALLOC)) == (TK_ML_ALLOC | TK_ML_DEALLOC)) {
+        __atomic_fetch_add(&ms_realloc, 1, __ATOMIC_RELAXED);
+        if (result)
+            __atomic_fetch_add(&ms_alloc_bytes, malloc_size((void *)result), __ATOMIC_RELAXED);
+    } else if (type & TK_ML_ALLOC) {
+        __atomic_fetch_add((type & TK_ML_CLEARED) ? &ms_calloc : &ms_malloc, 1, __ATOMIC_RELAXED);
+        if (result)
+            __atomic_fetch_add(&ms_alloc_bytes, malloc_size((void *)result), __ATOMIC_RELAXED);
+    } else if ((type & TK_ML_DEALLOC) && a2) {
+        __atomic_fetch_add(&ms_free, 1, __ATOMIC_RELAXED);
+        __atomic_fetch_add(&ms_freed, malloc_size((void *)a2), __ATOMIC_RELAXED);
+    }
+    if (ms_prev_logger) ms_prev_logger(type, a1, a2, a3, result, skip);
+}
+#endif
+
+static int ms_on;        /* 1 once TK_MEM_STATS=1 was seen */
+static int ms_done;      /* the report was printed */
+
+static void ms_report(void)
+{
+    if (!__atomic_load_n(&ms_on, __ATOMIC_ACQUIRE) ||
+        __atomic_exchange_n(&ms_done, 1, __ATOMIC_ACQ_REL)) return;
+    size_t sealed = 0, committed = 0;
+    tks_mem_stats(&sealed, &committed);
+#ifdef TK_MS_MALLOC
+    malloc_logger = ms_prev_logger;   /* stop counting before printing */
+    size_t live = ms_live_bytes();
+    fprintf(stderr,
+            "tk-mem-stats: v=1 pid=%ld sealed_bytes=%zu sealed_committed=%zu"
+            " region_released_bytes=0 malloc_calls=%zu calloc_calls=%zu"
+            " realloc_calls=%zu alloc_bytes=%zu free_calls=%zu freed_bytes=%zu"
+            " live_bytes_delta=%lld\n",
+            (long)getpid(), sealed, committed,
+            __atomic_load_n(&ms_malloc, __ATOMIC_RELAXED),
+            __atomic_load_n(&ms_calloc, __ATOMIC_RELAXED),
+            __atomic_load_n(&ms_realloc, __ATOMIC_RELAXED),
+            __atomic_load_n(&ms_alloc_bytes, __ATOMIC_RELAXED),
+            __atomic_load_n(&ms_free, __ATOMIC_RELAXED),
+            __atomic_load_n(&ms_freed, __ATOMIC_RELAXED),
+            (long long)live - (long long)ms_live_start);
+#else
+    fprintf(stderr,
+            "tk-mem-stats: v=1 pid=%ld sealed_bytes=%zu sealed_committed=%zu"
+            " region_released_bytes=0 malloc_calls=na calloc_calls=na"
+            " realloc_calls=na alloc_bytes=na free_calls=na freed_bytes=na"
+            " live_bytes_delta=na\n",
+            (long)getpid(), sealed, committed);
+#endif
+    fflush(stderr);
+}
+
+static void ms_init(void)
+{
+    const char *e = getenv("TK_MEM_STATS");
+    if (!e || e[0] != '1' || e[1] != '\0') return;
+    /* Registered before every other handler, so it runs after them and
+     * counts their frees. */
+    if (atexit(ms_report) != 0) return;
+#ifdef TK_MS_MALLOC
+    ms_live_start = ms_live_bytes();
+    ms_prev_logger = malloc_logger;
+    malloc_logger = ms_logger;
+#endif
+    __atomic_store_n(&ms_on, 1, __ATOMIC_RELEASE);
+    /* os.exit and a recorded failure leave through _exit(): tk_exitfail.h */
+    tk_exit_report = ms_report;
+}
+
 void tk_runtime_init(int argc, char **argv) {
+    /* 127.529: first, so its atexit handler runs last. */
+    ms_init();
     /* 127.109: release the main thread's error box at exit.  Registered HERE,
      * not lazily from tk_err_box: atexit handlers run on the main thread, so a
      * lazy registration from a std.task worker would enter the handler once

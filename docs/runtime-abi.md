@@ -1598,6 +1598,78 @@ arguments at any point during execution.
 `tk_runtime_init` also calls `tk_cap_init(argc, argv)` to initialise the
 capability broker (see §12).
 
+### 10.1 `TK_MEM_STATS=1` exit report (story 127.529)
+
+With `TK_MEM_STATS=1` in a toke program's environment, the program prints one
+line to stderr as it exits:
+
+```
+tk-mem-stats: v=1 pid=4242 sealed_bytes=6400 sealed_committed=67108864 region_released_bytes=0 malloc_calls=411 calloc_calls=1 realloc_calls=0 alloc_bytes=22528 free_calls=400 freed_bytes=12800 live_bytes_delta=9728
+```
+
+Any other value (`0`, `yes`, `11`) or no variable at all prints nothing.
+`tk_runtime_init` reads the variable once, first of all. When it is not `1`
+nothing is installed, so a program without it runs the same code as before
+127.529. Measured on 2026-11-24 with a loop of 3,000,000 three-number
+interpolations, CPU time over 15 interleaved runs: median 0.747 s with the
+base stdlib and 0.747 s with the candidate (variable unset). With the
+variable set it took 1.052 s: each `malloc` and `free` pays for the hook and a
+`malloc_size`.
+
+| Field | Meaning |
+|---|---|
+| `v` | Format version. A field is only ever added at the end, and `v` goes up when one is. |
+| `pid` | The reporting process. A forked child (the http server's workers) that exits through `exit()` reports too, under its own pid. |
+| `sealed_bytes` | Bytes handed out of the sealed string heap (§3.1), headers and 16-byte rounding included: `tks_top`, which the heap keeps anyway. It goes past the reservation only after the reservation is exhausted, because each failed bump still adds. 0 without the heap. |
+| `sealed_committed` | Sealed-heap bytes committed read/write, in 64 MiB chunks. An upper bound on what the heap holds resident. |
+| `region_released_bytes` | Always 0. A region (ADR-0016) will release bytes here once slice (ii) lands. |
+| `malloc_calls`, `calloc_calls`, `realloc_calls` | Calls made after `tk_runtime_init`, by every thread and every library in the process, libc included. |
+| `alloc_bytes` | Usable size (`malloc_size`) of every block those calls returned. A `realloc` counts its whole new block. |
+| `free_calls`, `freed_bytes` | `free()` calls on a non-NULL pointer, and the usable size of the blocks they released. The old block of a moving `realloc` is in neither. |
+| `live_bytes_delta` | Change in the bytes all malloc zones hold, from `tk_runtime_init` to the report (`malloc_zone_statistics`). It is exact where the two counters above are not, so use this one for the net figure. It is signed. |
+
+**Platforms.** The malloc fields come from libmalloc's `malloc_logger` hook.
+libmalloc tests that hook on every call whether or not it is set, so setting
+it costs nothing extra while the report is off. Off Darwin, and in an
+ASan-built program (ASan's allocator replaces libmalloc's, and the hook never
+fires), these fields read `na`. The sealed fields are always reported.
+
+**When it prints.** It prints from an `atexit` handler that `tk_runtime_init`
+registers before any other, so it runs last and counts the frees of the other
+handlers. It also prints from the `_exit()` paths that end a toke program:
+`os.exit`, `process.exit`, and the recorded-failure handler of `tk_exitfail.h`
+(a failed `test.eq`, an http server that did not start). There it prints just
+before `_exit`, through the weak `tk_exit_report` pointer in that header. It
+prints at most once. A process killed by a signal, or one that calls `_exit`
+from C glue, prints nothing.
+
+**Thread safety.** Every counter is updated with a relaxed
+`__atomic_fetch_add` on the allocating thread. C2260 runs 4 threads × 20,000
+`malloc`/`free` pairs and requires that all of them are counted. A scratch copy
+that used plain `++` instead lost about a third of them.
+
+**Measuring bytes per iteration (the ADR-0016 / 127.299 harness).** This
+report replaces the scratch `tks_top` destructor and the
+`DYLD_INSERT_LIBRARIES` interposer of the 127.299 note §8. Run the harness
+binary twice, at two iteration counts, and take the slope:
+
+```sh
+for n in 20 200; do
+  TK_MEM_STATS=1 Z256_MODE=lex Z256_ITERS=$n build/testbin/test_z256bench \
+    2>&1 >/dev/null | grep '^tk-mem-stats:' > stats.$n
+done
+f() { sed -n "s/.* $2=\([-0-9]*\).*/\1/p" "$1"; }
+for k in sealed_bytes live_bytes_delta malloc_calls free_calls; do
+  echo "$k/iter = $(( ($(f stats.200 $k) - $(f stats.20 $k)) / 180 ))"
+done
+```
+
+The ADR's primary metric, bytes per iteration, is
+`(sealed_bytes + live_bytes_delta − region_released_bytes)` per iteration. A
+slice is accepted when that slope is zero for the code inside `{arena}`. Run
+both the candidate and the base built from the same tree, on the same machine.
+Do not compare across platforms: allocator rounding differs.
+
 ---
 
 ## 11. Injection Resistance
