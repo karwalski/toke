@@ -115,8 +115,8 @@ them:
 |---|---|
 | return from `main` with `0` | `1` (the at-exit handler, 127.231) |
 | return from `main` with a non-zero status | that status (135.29) |
-| `os.exit(0)`, `process.exit(0)` | `1` |
-| `os.exit(n)`, `process.exit(n)`, `n` non-zero | `n` as \_exit(2) truncates it; see the note below |
+| `os.exit` or `process.exit` with status 0 | `1` |
+| `os.exit` or `process.exit` with a non-zero status `n` | `n` as \_exit(2) truncates it; see the note below |
 | a runtime trap through `exit(1)` (`RT002`-`RT010`: overflow, division, bounds, nil, map key, re-raise; a capability refusal; `test.report` with failures; most out-of-memory reports) | `1` |
 | `abort()` or a signal | killed by the signal; no `exit_status` line |
 | the child of `process.spawn` between `fork` and `exec` (`_exit(1)`), and each `http` worker process (`_exit(0)` when its loop ends) | not the program's status: these are separate processes, and a failure recorded inside a worker is not passed to the parent |

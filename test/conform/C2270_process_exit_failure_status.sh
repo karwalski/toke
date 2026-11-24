@@ -104,7 +104,7 @@ if [ -x ./pfail0_bin ] && [ -x ./ofail0_bin ]; then
     else
         ERR="$(head -c 400 pm.err)"
         expect "TK_MEM_STATS=1: process.exit(0) after a failure reports once, exits 1 (as os.exit)" \
-            "${PRC} ${PN} $(grep -a -c 'kind=exit_status' pm.err)" "1 ${ON} 1"
+            "${PRC} ${ON} ${PN} $(grep -a -c 'kind=exit_status' pm.err)" "1 1 1 1"
     fi
 fi
 
