@@ -130,6 +130,10 @@ SCAN_EXT = (".md", ".txt", ".tkt", ".html", ".json", ".py", ".js", ".php",
 # 132.7 (v2, 2026-11-23): the repositioning brief left this list; it is enforced
 # by rules 1 and 2 like any other published page.
 PENDING = {
+    # 138.71: loke's own repo (karwalski/loke, swept by CI's sibling checkout)
+    # states "token savings of 60-80%" without TEMSpec §6.3 fields. loke owns the
+    # fix; it travels with the 138.43 reply. Delete when loke qualifies it.
+    "loke/docs/research/research-proposal.md": "138.71 — loke research proposal token claim (loke-owned)",
 }
 
 # Same idea, by prefix — used for the sibling repos swept by story 132.15.
