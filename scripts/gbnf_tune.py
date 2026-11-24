@@ -40,8 +40,10 @@ and caches which tokens each automaton position accepts):
   * LOOKAHEAD assertions `(= [^a-zA-Z0-9])` on the rules that end a word
     token (identifiers, numbers, scalar type names).  XGrammar uses an
     assertion only as a hint when it classifies tokens for its mask cache;
-    string acceptance ignores it.  Every one listed is implied by the grammar
-    (it never lets a word character follow a word token).  In XGrammar 0.2.9
+    string acceptance ignores it.  Each one listed is INTENDED to be implied
+    by the grammar (toke.gbnf puts ws1 between word tokens, so a word
+    character should never follow one); that is argued, not proved, and only
+    sampled by --tokens below.  In XGrammar 0.2.9
     a deliberately wrong assertion changed no mask (negative control, story
     131.141), so `--check --tokens` -- every mask must allow the fragment's
     own next token -- guards the masks against a future engine that trusts
@@ -56,7 +58,12 @@ Usage:
          importable, agree with gbnf_earley on toke.gbnf -- itself tied to
          the parser by `make check-gbnf` -- on EVERY fragment of
          test/gbnf/fragments.json; an engine that is not installed is
-         SKIPPED, never a pass (--require-engines makes that a failure);
+         SKIPPED, never a pass (--require-engines makes that a failure).
+         Agreement on the fragment set is evidence, not a proof that the
+         tuned forms are equivalent to toke.gbnf: a production the fragments
+         barely exercise can change unnoticed (removing `fn` from ident in
+         both forms still agreed 2081/2081); check 1 is what catches a
+         hand edit, and only a generator bug can get past it;
       --tokens  also fill XGrammar masks over the cl100k_base vocabulary at
          every token of every accepted fragment of a stride sample and fail if
          one disallows the fragment's own next token (the lookahead check;
