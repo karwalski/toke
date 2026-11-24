@@ -351,8 +351,11 @@ Table of Contents
       terminate in a validated binary without human intervention.
 
    Arena:
-      A lexically scoped memory region.  All allocations within an
-      arena are freed in bulk when the arena's scope exits.
+      An explicit {arena ...} block (Section 7.9).  As implemented, an
+      arena block releases no memory (Section 8.1).  A lexically
+      scoped region whose allocations are released in bulk when the
+      block exits is the target proposed in ADR-0016 (status
+      Proposed), not current behaviour.
 
    Corpus:
       The collection of validated (task description, toke source) pairs
@@ -487,9 +490,16 @@ Table of Contents
 
 ### 4.9.  Arena Memory Discipline
 
-   Memory allocation SHALL follow a lexical arena discipline.  All heap
-   allocations within a function body or explicit arena block are freed
-   deterministically on scope exit.
+   The language provides a lexically scoped {arena ...} block (Section
+   7.9).  As implemented, no memory is released at the exit of a
+   function body or of an arena block: a value allocated at run time
+   stays valid until the program exits, apart from the runtime
+   releases listed in Section 8.1 (memory-model.md Sections 1.1-1.3).
+   Deterministic release at the exit of an explicit arena block is the
+   target proposed in ADR-0016 (docs/decisions/ADR-0016-arena-block.md,
+   status Proposed), not current behaviour.  The per-function implicit
+   arena that earlier revisions of this section required is not
+   implemented and is not part of the memory model (story 127.524).
 
 ---
 
@@ -984,9 +994,14 @@ Table of Contents
    }
 ```
 
-   An arena block creates a lexically scoped allocation region.  All
-   heap allocations made within the block are freed when the block
-   exits, regardless of exit path.
+   An arena block is a statement whose body is a statement list.  It
+   is parsed and type-checked.  As implemented it releases no memory:
+   values made inside it live under the same rules as values made
+   anywhere else (Section 8.1), and a program SHALL NOT depend on
+   memory being released at the block's exit.  Under the target
+   proposed in ADR-0016 (status Proposed), heap allocations made
+   within the block would be released when the block exits, on every
+   exit path.
 
    Inside an arena block, at any depth, assigning a value of a heap
    type (str, an array, a map, a struct or sum, a closure, or an error
@@ -1049,24 +1064,35 @@ Table of Contents
 
 ### 8.1.  Arena Allocation
 
-   toke uses lexical arena allocation.  Every function body is an
-   implicit arena.  All allocations within the function body —
-   strings, arrays, structs — are freed when the function returns,
-   via any return path including error propagation.
+   toke does not allocate in per-function or per-scope arenas.  Every
+   value the runtime creates (a string, array, map, struct or sum box)
+   comes from one of two process-wide sources: the S1 sealed-string
+   heap, a single region allocated by an atomic bump, or malloc
+   (memory-model.md Section 1.1).  This memory is not released before
+   the program exits, except closure environments, released with
+   their last reference, and the number conversions inside one string
+   interpolation, which no toke value can reach (memory-model.md
+   Section 1.3).  The operating system reclaims everything at exit.
 
-   Explicit {arena ...} blocks create sub-arenas with shorter
-   lifetimes.  These are freed when the block exits.
-
-   The allocator is a bump allocator per arena, providing O(1)
-   allocation cost.  Deallocation is bulk: the entire arena is freed
-   in a single operation on scope exit, with no per-object overhead.
+   Explicit {arena ...} blocks are parsed and type-checked but release
+   nothing (memory-model.md Section 1.2).  Earlier revisions of this
+   section made every function body an implicit arena freed in a
+   single operation on return.  No toke implementation has done this,
+   and it is no longer part of the model (story 127.524).  Release at
+   the exit of an explicit arena block, from a per-thread region
+   stack, is the target proposed in ADR-0016
+   (docs/decisions/ADR-0016-arena-block.md, status Proposed).
 
    Allocation rules:
 
-   1.  Allocations within a function body are valid for the lifetime
-       of that function call.
-   2.  Allocations within an arena block are valid for the lifetime
-       of that block.
+   1.  A value allocated at run time is valid for as long as any toke
+       name, field, element or capture refers to it; as implemented,
+       that is until the program exits.  An implementation MUST NOT
+       release memory that a toke value can still reach.
+   2.  Allocations within an arena block follow rule 1: as
+       implemented, they are not released when the block exits.  Under
+       the ADR-0016 target (status Proposed) they would be valid for
+       the lifetime of the block.
    3.  Inside an {arena ...} block, a value of a heap type MUST NOT be
        assigned to a module-level mut binding (compile error E5001).
        This is the escape rule the reference compiler ships
@@ -1090,8 +1116,9 @@ Table of Contents
 
    In well-typed toke code without FFI:
 
-   o  No use-after-free: arena discipline prevents access to freed
-      memory.
+   o  No use-after-free: memory that a toke value can still reach is
+      never released (Section 8.1, rule 1).  As implemented, almost
+      nothing is released before the program exits.
    o  No buffer overflow: array bounds are checked at runtime (trap
       RT001).
    o  No uninitialised reads: all bindings require initialisation at
