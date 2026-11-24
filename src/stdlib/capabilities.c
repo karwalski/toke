@@ -329,6 +329,8 @@ static int canon_path(const char *in, int expand_tilde, char *out) {
         size_t hl = 0;
         head[0] = '\0';
         for (int i = 0; i < k; i++) {
+            /* comp[0..nc) is filled above and k <= nc. */
+            /* cppcheck-suppress uninitvar */
             int w = snprintf(head + hl, sizeof head - hl, "/%s", comp[i]);
             if (w < 0 || (size_t)w >= sizeof head - hl) return 0;
             hl += (size_t)w;
