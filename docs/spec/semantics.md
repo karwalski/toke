@@ -663,6 +663,13 @@ Violation: `[errors.md E2001]`.
 `spawn` and `await` are predefined identifiers, not keywords. They can
 theoretically be shadowed (Section 4.5), though doing so is not recommended.
 
+> **As implemented (127.549):** the reference compiler has no `await` and no
+> `Task<T>` (E4050-E4052 were removed). `spawn f` is accepted only inside an
+> `sc{ }` block and yields an `i64` task handle; `f` must be a function value
+> taking no parameters (`&name`, a closure), else E4081, which also covers
+> the operand of `task.spawn` (std.task). Reconciling this section with the
+> implementation is story 127.553.
+
 > **Note:** `spawn`, `await`, and `Task` are default syntax additions to the language.
 > They do not yet appear in the main spec's reserved identifier list (Section 14).
 > Their semantics are defined here based on the reference compiler implementation
@@ -854,6 +861,7 @@ The following error codes are referenced by this specification:
 | E4051 | 7.1        | await argument not a Task                   |
 | E4052 | 7.1        | Spawned function has parameters             |
 | E4080 | 8.1        | Match on a record value names variants      |
+| E4081 | 7.1        | task.spawn / spawn operand not a `():T` value |
 | E5001 | 7.3        | Value escapes arena scope                   |
 
 ---
