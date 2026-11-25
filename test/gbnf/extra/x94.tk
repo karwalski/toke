@@ -1,0 +1,1 @@
+m=a;i=fn:std.io;f=fn(fn:i64;b:@(@$t);c:(@*i64):i64;d:@(@@i64)):i64{let fn=1;fn=2;a=b&&1;a=b&&(c);a=b&&-c;rt&x.y;rt(x).0;rt"s".y;rt$x.y.z;a=!x.y;a=!h(1);a=!x.0;a=!"s".len();<fn};

@@ -1,0 +1,1 @@
+m=a;f=g(x:i64):i64{let(*c*)a=1;if(a){<1}el(*c*)if(a){<2};lp(let(*c*)i=0;i<3;i=i+1){};{arena(*c*)a=1};rt(*c*)x;a=if(a){1}el(*c*)if(a){2}el{3};a=mt(*c*)x{$a:v(*c*)1};a=x(*c*)as i64;a=x as(*c*)i64;a=x.0(*c*).1;a=x.0.(*c*)1;sc{a=spawn(*c*)x};<x};
