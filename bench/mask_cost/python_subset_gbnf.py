@@ -47,7 +47,8 @@ bench/mask_cost/requirements.txt.
 
 Usage:
   python_subset_gbnf.py --write [--depth N]   regenerate python-subset.gbnf
-  python_subset_gbnf.py --check [--rounds R]  regenerate-and-compare, coverage, soundness
+  python_subset_gbnf.py --check [--rounds R]  regenerate-and-compare, no rule or terminal
+                                              unreachable from root (131.151), coverage, soundness
   python_subset_gbnf.py --mutation [--json F] the agreement check's mutation score (131.149)
 """
 from __future__ import annotations
@@ -70,6 +71,9 @@ XGR_OUT = HERE / "python-subset-xgr.gbnf"
 sys.path.insert(0, str(HERE.parents[1] / "scripts"))
 PY_LEXICAL = ["ws", "ws1", "blank", "nl", "name", "capname", "number", "str", "strq", "tstr",
               "tstrq", "fchunk", "fchunkq", "fspec", "fspecq"]
+# (131.151: a lexical rule the lexeme form only uses inside another lexeme --
+# tstr/tstrq inside pstr -- gets no terminal of its own there;
+# gbnf_tune.lexeme_lark omits it, and refuses to emit an unreachable terminal)
 # language-equivalent rewrites of the f-string rules: a run of literal
 # f-string characters is one lexeme, and so is a format spec
 PY_REFACTOR = r"""
@@ -708,10 +712,15 @@ def main(argv: list[str] | None = None) -> int:
             path.write_text(gen(a.depth), encoding="utf-8")
             print(f"wrote {path}")
         return 0
+    stale = False
     for path, gen in outs:
         if path.read_text(encoding="utf-8") != gen(a.depth):
             print(f"FAIL: {path.name} is not the generation (run --write)")
-            return 1
+            stale = True
+    # 131.151: the tuned forms carry no rule or terminal unreachable from root
+    from gbnf_tune import dead_check
+    if any([dead_check(p, "[python-subset]") for p in (LEXEME_OUT, XGR_OUT)]) or stale:
+        return 1
     sys.path.insert(0, str(HERE))
     from mask_cost import program_set  # noqa: E402
     sel: dict = {}

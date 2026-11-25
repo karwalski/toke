@@ -1,0 +1,1 @@
+m=a;f=g(x:i64):i64{a=-x;a=~x;a=!x;a=!-x;a=!~x;a=!!x;a=!fn;a=!"s";a=!@(1);a=!(x);a=!fn(){};a=!T{a:1} as bool;a=!$p{a:1}!$e;a=-~!x;rt-x};
