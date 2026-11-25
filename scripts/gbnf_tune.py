@@ -53,7 +53,9 @@ Usage:
   gbnf_tune.py --write     regenerate docs/spec/toke-lexeme.lark and toke-xgr.gbnf
   gbnf_tune.py --check     the gate (run by `make check-grammar-artefacts`):
       1. both artefacts are byte-identical to a fresh generation from toke.gbnf
-         (standard library only; always runs);
+         (standard library only; always runs), and neither defines a rule or
+         terminal unreachable from root (131.151; the generators also refuse
+         to emit one);
       2. llguidance (toke-lexeme.lark) and XGrammar (toke-xgr.gbnf), when
          importable, agree with gbnf_earley on toke.gbnf -- itself tied to
          the parser by `make check-gbnf` -- on EVERY fragment of
@@ -242,7 +244,7 @@ def lexeme_lark(gbnf_text: str, lexical: list[str], depth: int, header: str,
     lex = set(lexical)
     by_regex: dict[str, str] = {}
     term: dict[str, tuple[str, bool]] = {}
-    defs: list[str] = []
+    defs: list[tuple[str, str]] = []
     for n in lexical:
         r = _Regexer(rules, depth).rx(("name", n))
         if r is _EMPTY:
@@ -257,12 +259,14 @@ def lexeme_lark(gbnf_text: str, lexical: list[str], depth: int, header: str,
         if key not in by_regex:
             t = lark_name(n).upper()
             by_regex[key] = t
-            defs.append(f"{t}: /{key}/" if key == r else f'{t}: /{r}/ & ~""')
+            defs.append((t, f"{t}: /{key}/" if key == r else f'{t}: /{r}/ & ~""'))
         term[n] = (by_regex[key], nul)
+    used: set[str] = set()
 
     def leaf(node):
         if node[0] == "name" and node[1] in lex:
             t, nul = term[node[1]]
+            used.add(t)
             return ("rep", ("term", t), 0, 1) if nul else ("term", t)
         return None
 
@@ -272,8 +276,15 @@ def lexeme_lark(gbnf_text: str, lexical: list[str], depth: int, header: str,
         if n in reach:
             out.append(f"{lark_name(n)}: {_lk(_map(node, leaf), top=True)}\n")
     out.append("\n// lexemes: the lexical rules, inlined to regular expressions\n")
-    out += [d + "\n" for d in defs]
-    return "".join(out)
+    # 131.151: a lexical rule that only other lexical rules use (tstr inside
+    # pstr) is inlined into their regexes; its own terminal would be dead
+    out += [d + "\n" for t, d in defs if t in used]
+    text = "".join(out)
+    from grammar_mutation import dead_rules
+    dead = dead_rules(text, "lark")
+    if dead:
+        raise GbnfError(f"lexeme form defines rules/terminals unreachable from root: {dead}")
+    return text
 
 
 def _lk(node, top: bool = False) -> str:
@@ -369,7 +380,12 @@ def xgrammar_tuned(gbnf_text: str, inline: dict[str, str], lookahead: dict[str, 
             if n in lookahead:
                 text = f"({text}) (= {lookahead[n]})" if "|" in text else f"{text} (= {lookahead[n]})"
             out.append(f"{n:<{width}} ::= {text}\n")
-    return "".join(out)
+    text = "".join(out)
+    from grammar_mutation import dead_rules
+    dead = dead_rules(text, "gbnf")
+    if dead:
+        raise GbnfError(f"XGrammar form defines rules unreachable from root: {dead}")
+    return text
 
 
 def _gstr(s: str) -> str:
@@ -579,6 +595,20 @@ def xgr_token_check(gbnf_text: str, texts: list[str]) -> tuple[int, int, list[st
 
 
 # -------------------------------------------------------------------- gate --
+def dead_check(path: Path, tag: str) -> bool:
+    """131.151: True (and a FAIL line) if the tuned form at `path` defines a
+    rule or terminal that no derivation from root references."""
+    from grammar_mutation import dead_rules
+    text = path.read_text(encoding="utf-8") if path.exists() else ""
+    dead = dead_rules(text, "lark" if path.suffix == ".lark" else "gbnf")
+    if dead:
+        print(f"{tag} FAIL: {path.name} defines {len(dead)} rule(s)/terminal(s) "
+              f"unreachable from root: {', '.join(dead)}")
+    else:
+        print(f"{tag} {path.name}: every rule and terminal is reachable from root")
+    return bool(dead)
+
+
 def check(require_engines: bool, tokens: bool, stride: int) -> int:
     import json
     from gbnf_earley import Grammar
@@ -592,6 +622,7 @@ def check(require_engines: bool, tokens: bool, stride: int) -> int:
             fail = True
         else:
             print(f"[tuned] {rel} matches a fresh generation from toke.gbnf")
+        fail = dead_check(path, "[tuned]") or fail
     frags = json.load(open(ROOT / "test" / "gbnf" / "fragments.json", encoding="utf-8"))["fragments"]
     verdict: dict[str, bool] = {}
 

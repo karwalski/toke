@@ -19,6 +19,7 @@ or a regex alternative with no class, group, quantifier or anchor.
 
 Library:
   mutants(text, dialect) -> [Mutant]          dialect "lark" or "gbnf"
+  dead_rules(text, dialect) -> [name]         rules/terminals unreachable from root
   score(mutants, text, make_acceptor, inputs, reference) -> report dict
 CLI:
   grammar_mutation.py --toke [--limit N]       report-only score for
@@ -166,6 +167,35 @@ def _regex(text: str, i: int, rule: str, out: list[Mutant]) -> int:
 
 def mutants(text: str, dialect: str) -> list[Mutant]:
     """Every single-alternative deletion in a Lark ("lark") or GBNF ("gbnf") grammar."""
+    out, refs = _scan(text, dialect)
+    # a rule no derivation from `root` uses cannot change the language
+    live = _live(refs)
+    for m in out:
+        if m.rule not in live:
+            m.status, m.note = "unreachable", "not reachable from root"
+    return out
+
+
+def dead_rules(text: str, dialect: str) -> list[str]:
+    """The rules and terminals a Lark ("lark") or GBNF ("gbnf") grammar defines
+    that no derivation from `root` references (story 131.151)."""
+    _, refs = _scan(text, dialect)
+    return sorted(set(refs) - _live(refs))
+
+
+def _live(refs: dict[str, set]) -> set[str]:
+    live, todo = set(), ["root"]
+    while todo:
+        r = todo.pop()
+        if r in live or r not in refs:
+            continue
+        live.add(r)
+        todo += refs[r]
+    return live
+
+
+def _scan(text: str, dialect: str) -> tuple[list[Mutant], dict[str, set]]:
+    """(every single-alternative deletion, {rule: names its body references})."""
     out: list[Mutant] = []
     defsep = ":" if dialect == "lark" else "::="
     comment = "//" if dialect == "lark" else "#"
@@ -228,18 +258,7 @@ def mutants(text: str, dialect: str) -> list[Mutant]:
             i += 1
         body_end = lend
     close_rule(body_end)
-    # a rule no derivation from `root` uses cannot change the language
-    live, todo = set(), ["root"]
-    while todo:
-        r = todo.pop()
-        if r in live or r not in refs:
-            continue
-        live.add(r)
-        todo += refs[r]
-    for m in out:
-        if m.rule not in live:
-            m.status, m.note = "unreachable", "not reachable from root"
-    return out
+    return out, refs
 
 
 _W: dict = {}
