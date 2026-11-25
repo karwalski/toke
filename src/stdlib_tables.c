@@ -696,12 +696,22 @@ int recv_method_on_kind(const char *m, char k) {
  * guess, and a wrong E4026 on a correct call is worse than a missing one
  * (AGENTS.md §2).
  */
+/* 127.548: glue arguments the call does not spell.  The array combinators
+ * take the function value TWICE over: a C-ABI adapter the compiler emits for
+ * its signature, and the value itself (llvm.c fvc_adapter), so their glue
+ * declares one argument more than `xs.map(f)` writes. */
+static int recv_glue_hidden_args(const char *sym) {
+    return (!strcmp(sym, "tk_arr_map") || !strcmp(sym, "tk_arr_filter") ||
+            !strcmp(sym, "tk_arr_reduce") || !strcmp(sym, "tk_arr_sort")) ? 1 : 0;
+}
+
 int recv_method_arity(const char *m) {
     const RecvMethod *r = recv_method_find(m);
     if (!r) return -1;
     int a = -1;
     for (int i = 0; r->syms[i]; i++) {
         int n = stdlib_glue_arity(r->syms[i]);
+        if (n >= 0) n -= recv_glue_hidden_args(r->syms[i]);
         if (n < 0) return -1;
         if (a < 0) a = n;
         else if (a != n) return -1;
@@ -940,10 +950,10 @@ const StdlibDecl g_stdlib_decls[] = {
     {"tk_array_set_w", "declare i64 @tk_array_set_w(i64, i64, i64)", 0},
     {"tk_map_set_w", "declare i64 @tk_map_set_w(i64, i64, i64)", 0},
     /* Higher-order array functions */
-    {"tk_arr_map", "declare i64 @tk_arr_map(i64, i64)", 0},
-    {"tk_arr_filter", "declare i64 @tk_arr_filter(i64, i64)", 0},
-    {"tk_arr_reduce", "declare i64 @tk_arr_reduce(i64, i64, i64)", 0},
-    {"tk_arr_sort", "declare i64 @tk_arr_sort(i64, i64)", 0},
+    {"tk_arr_map", "declare i64 @tk_arr_map(i64, i64, i64)", 0},
+    {"tk_arr_filter", "declare i64 @tk_arr_filter(i64, i64, i64)", 0},
+    {"tk_arr_reduce", "declare i64 @tk_arr_reduce(i64, i64, i64, i64)", 0},
+    {"tk_arr_sort", "declare i64 @tk_arr_sort(i64, i64, i64)", 0},
     {"tk_arr_push_w", "declare i64 @tk_arr_push_w(i64, i64)", 0},
     /* str glue extras (loke/moke) */
     {"tk_str_push_w", "declare i64 @tk_str_push_w(i64, i64)", 0},

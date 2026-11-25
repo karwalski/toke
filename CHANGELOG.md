@@ -192,6 +192,29 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   do: `b as u16` on an `i8` of -1 is 65535 (it was 255, while `b as i64 as u16`
   was already 65535). Conformance: C2040 (all 64 pairs over 20 values, against
   C's output).
+- **`.map` / `.filter` / `.reduce` / `.fold` / `.sort` call any function value
+  correctly, on every target** (127.548, a silent miscompile on x86-64). The
+  runtime called the function it was handed as `int64_t f(int64_t)`. That is
+  right only for an `i64 (i64)` toke function. A `bool` predicate returns an
+  i1, and x86-64 defines only bit 0 of the return register, so on linux/amd64
+  `@(0-3;7;0;9).filter(&pos)` kept the -3 (CI run 45433635073,
+  `diff-codegen` on test_127_44). arm64 happened to clear the register, so the
+  same program passed there. Three related failures had the same cause:
+  `.map` of an `f64` function returned its input unchanged on every target
+  (the value travelled in an integer register, the function used a float
+  one), and a closure or a closure-bound local passed to any of these
+  combinators was called as code and died with SIGBUS. The compiler now hands
+  the runtime a pair: a C-ABI adapter emitted once per signature
+  (`@__tk_fvc_<key>`), and the function value. The adapter converts each
+  array slot to the parameter's type, calls the function or closure as a toke
+  call does, and widens the result to a defined i64 (zext of a `bool`, the
+  bits of an `f64`, a narrow integer by its own signedness). Predicates are
+  not masked: an `i64` predicate returning 2 still keeps its element. The
+  glue signatures change (`tk_arr_map/filter/sort(arr, adapter, value)`,
+  `tk_arr_reduce(arr, init, adapter, value)`). No toke source changes, and
+  calls through a function value in toke (`let g=&f; g(x)`) are unchanged.
+  A sort comparator that itself sorts no longer replaces the outer sort's
+  comparator. Tests: C2295–C2299, `test/standalone/test_127_548.tk`.
 
 ### Security fixes
 
