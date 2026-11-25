@@ -348,6 +348,20 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   `toke-lexeme.lark` and 225 of 320 in `toke-xgr.gbnf` are killed by
   `test/gbnf/fragments.json`; adding fragments is 131.150. Details: limit 4 in
   `docs/about/reviews/mask-cost-2026-11-24.md`.
+- **The generated tuned grammars carry no rule or terminal unreachable from `root`**
+  (131.151). `bench/mask_cost/python-subset-lexeme.lark` defined `TSTR` and `TSTRQ`,
+  which no rule used: the 131.148 rewrite folds the plain string kinds into the `PSTR`
+  lexeme, so `tstr` / `tstrq` are only inlined into its regex. `lexeme_lark` in
+  `scripts/gbnf_tune.py` now emits a lexeme's terminal only when a rule reachable from
+  `root` references it, and both generators (`lexeme_lark`, `xgrammar_tuned`) refuse
+  to return a form with an unreachable rule or terminal. `gbnf_tune.py --check`
+  (`make check-grammar-artefacts`) and `python_subset_gbnf.py --check`
+  (`make bench-mask-cost-check`) also check the files on disk; the previous
+  `python-subset-lexeme.lark` fails with `TSTR, TSTRQ`. The regenerated file loses
+  exactly those two lines; the language is unchanged (3887 of 3887 inputs still agree
+  for llguidance and XGrammar). `docs/spec/toke-lexeme.lark` and `toke-xgr.gbnf` had
+  no dead rules and are byte-identical. `scripts/grammar_mutation.py` gains
+  `dead_rules(text, dialect)`, the reachability its mutation pass already used.
 
 - **`make fuzz-smoke` replays its inputs under libFuzzer** (127.480). It passed
   libFuzzer a seed directory plus adversarial files, a mix libFuzzer refuses
