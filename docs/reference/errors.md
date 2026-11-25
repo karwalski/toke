@@ -1393,6 +1393,33 @@ t=$s{a:i64;b:i64};
 f=main():i64{let m=mt $s{a:1;b:2} {$a:n n+10;$b:n n+20};<m};
 ```
 
+### E4081
+
+**task.spawn / spawn operand is not a function value taking no parameters**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | type_check |
+
+`task.spawn(scope;f)` and `sc{ spawn f }` run the function value `f` on a
+pool thread, calling it with no arguments. `task.tki` declares the parameter
+`i64`, so until 127.549 any integer was accepted and called as code: a
+function with parameters read garbage for them, and `task.spawn(s;w())` or
+`spawn w()` called `w` at once, on the spawning thread, and spawned its
+result. The operand must be `&name`, a function name, a closure or another
+value of type `():T` (any return type: `task.result` gives a bool as 0/1, an
+f64 as its bits for `math.frombits`). There is no `fix`: whether `&w`, a
+closure, or a different function was meant is not decidable.
+
+<!-- skip-check -->
+```text
+m=test;
+i=task:std.task;
+f=w():i64{<42};
+f=main():i64{let s=task.scope();let h=task.spawn(s;w());<0};
+```
+
 ## Arena Errors (E5xxx)
 
 ### E5001
