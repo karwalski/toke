@@ -135,7 +135,7 @@ tl_ew: tlg* (tlg_d | idx idx2*)
 tl_ep: tlg* tlg_c
 tlg: tlg_c | tlg_d
 tlg_c: (idx idx2*)? ws "(" ws args? ws ")"
-tlg_d: (idx idx2*)? ws "." ws vname
+tlg_d: (idx idx2*)? ws "." ws ident
 idx: ws "." ws int
 idx2: ws1 "." ws int | "." ws1 int
 args: expr (ws ";" ws expr)*
