@@ -56,10 +56,10 @@ sheet, `--probe` to re-derive the character set against the built compiler).
 | `grammar_productions` | **53** | `grep -cE '^[A-Za-z][A-Za-z0-9_]*[[:space:]]*=' docs/spec/grammar.ebnf` |
 | `stdlib_modules` | **67** | `ls stdlib/*.tki \| wc -l` |
 | `conformance_cases_yaml` | **426** | `find test -name '*.yaml' \| wc -l` (grammar 98, diagnostics 252, lexical 37) |
-| `conformance_cases_shell` | **667** | `ls test/conform/*.sh \| wc -l` |
-| `conformance_cases_total` | **1,093** | the two rows above; `make conform` runs both |
-| `diagnostic_codes_documented` | **92** | `grep -cE '^### [EW][0-9]{4}' docs/reference/errors.md` |
-| `diagnostic_codes_in_src` | **92** | `python3 scripts/check_error_codes.py --list` — codes `src/` defines or emits; the gate fails on any divergence from the documented set |
+| `conformance_cases_shell` | **672** | `ls test/conform/*.sh \| wc -l` |
+| `conformance_cases_total` | **1,098** | the two rows above; `make conform` runs both |
+| `diagnostic_codes_documented` | **93** | `grep -cE '^### [EW][0-9]{4}' docs/reference/errors.md` |
+| `diagnostic_codes_in_src` | **93** | `python3 scripts/check_error_codes.py --list` — codes `src/` defines or emits; the gate fails on any divergence from the documented set |
 | `corpus_records_v04_frozen` | **23,382** | `jq .total ../toke-corpus/regen/freeze/freeze_129_summary.json` — freeze `129-freeze-2026-08-19`, reopened by Epic 131 |
 | `corpus_records_v02_2026_04` | **46,754** | `jq .total_entries ../toke-corpus/corpus/manifest.json` — the **v0.2-era** corpus of 2026-04-01, historical |
 | `patterns_catalogue_entries` | **47** | `jq '.entries \| length' patterns/catalogue.json` — the pattern catalogue the canonical paragraph names ("a 47-pattern catalogue"; story 131.145) |
