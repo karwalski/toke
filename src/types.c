@@ -6733,7 +6733,7 @@ static const Type *recv_value_type(Ctx *cx, const Node *recv) {
  *   str .split / .chars / .fields -> @str (std.str `split(..):@$str`;
  *       tk_str_chars_w / tk_str_fields_w build arrays of strings; the
  *       emitter's "@str" list).
- * `.map` is not modelled: its element type is the mapped function's return.
+ * `.map` needs its argument, so recv_map_result_type (127.550) answers it.
  */
 static Type *recv_result_on(Ctx *cx, const Type *rt, const char *member) {
     if (!rt || !member) return NULL;
@@ -6760,6 +6760,50 @@ static Type *recv_result_on(Ctx *cx, const Type *rt, const char *member) {
         }
     }
     return NULL;
+}
+
+/*
+ * recv_map_result_type (127.550) -- `xs.map(f)` on an ESTABLISHED array is an
+ * array of f's RETURN type, or NULL when that is not known.
+ *
+ * Unmodelled, `@(1.5;2.5).map(&dbl)` with dbl:(f64):f64 had no type, and the
+ * emitter's fallback tag called it @i64, so `j.enc(..)` and `"\(d0)"` on its
+ * elements printed the doubles' bit patterns (4613937818241073152 for 3.0)
+ * although tk_arr_map stored the right values (127.548's adapter).  The
+ * function value's signature is read the way a call through it is judged:
+ * `&f` of a module function (func_ref_sig), a closure literal with a declared
+ * return (params_sig; one without has no stated type and stays unmodelled),
+ * a local or parameter holding a function value (fnval_binding /
+ * fnval_bind_sig: `let g=&f`, `p:(i64):f64`), or the argument's own rtype.
+ * Only a one-parameter signature whose return is fully known, not void and
+ * not an error union is modelled (a fallible callee has no element value to
+ * store); anything else is left as it was.  The element is the declared
+ * return itself -- tk_arr_map stores what the adapter widened from it, the
+ * same slot an @T of that T holds.
+ */
+static Type *recv_map_fn_sig(Ctx *cx, const Node *a) {
+    if (!a) return NULL;
+    Type *sig = NULL;
+    if (a->kind == NODE_FUNC_REF) sig = func_ref_sig(cx, a);
+    else if (a->kind == NODE_CLOSURE) sig = params_sig(cx, a, 1);
+    else if (a->kind == NODE_IDENT) {
+        const Node *b = fnval_binding(cx, a);
+        sig = b ? fnval_bind_sig(cx, b, 0) : NULL;
+    }
+    if (!func_has_sig(sig) && func_has_sig(a->rtype)) sig = a->rtype;
+    return func_has_sig(sig) ? sig : NULL;
+}
+static Type *recv_map_result_type(Ctx *cx, const Type *rt, const Node *call) {
+    if (!rt || rt->kind != TY_ARRAY || !call || call->child_count != 2) return NULL;
+    Type *sig = recv_map_fn_sig(cx, call->children[1]);
+    if (!sig || sig->field_count != 1) return NULL;
+    Type *ret = sig->elem;
+    if (!ret || ret->kind == TY_VOID || ret->kind == TY_ERROR_TYPE
+        || tk_type_has_unknown(ret)) return NULL;
+    Type *at = mk_type(cx->env->arena, TY_ARRAY);
+    if (!at) return NULL;
+    at->elem = ret;
+    return at;
 }
 
 /*
@@ -6799,6 +6843,7 @@ static Type *recv_method_result_type(Ctx *cx, const Node *call) {
     }
     const Type *rt = recv_value_type(cx, recv);
     if (!rt) return NULL;
+    if (strcmp(member, "map") == 0) return recv_map_result_type(cx, rt, call);
     return recv_result_on(cx, rt, member);
 }
 

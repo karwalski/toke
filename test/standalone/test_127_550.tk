@@ -1,0 +1,76 @@
+(* test_127_550.tk -- story 127.550: `xs.map(f)` is an array of f's RETURN
+ * type, so its elements encode and interpolate as that type.
+ *
+ * Since 127.548 `@(1.5;2.5).map(&dbl)` (dbl:(f64):f64) computes [3.0,5.0],
+ * but the result was typed @i64: the checker did not model `.map`
+ * (types.c recv_result_on) and the emitter's fallback tag looked the mapped
+ * function up by its bare name (`dbl`, the symbol is `<module>_dbl`), so it
+ * never found it.  `j.enc(fs.map(&dbl))` printed
+ * [4613937818241073152,4617315517961601024], a str map printed pointers,
+ * a record map printed addresses and a bool map printed 0/1.  Every case
+ * below prints PASS/FAIL. *)
+m=test.t127550;
+i=io:std.io;
+i=j:std.json;
+i=s:std.str;
+
+t=$pt{x:i64;y:f64};
+t=$hold{xs:@f64;n:i64};
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");got)) };
+  <0
+};
+
+f=dbl(x:f64):f64{<x*2.0};
+f=big(x:f64):bool{<x>4.0};
+f=gt2(x:f64):bool{<x>2.0};
+f=pos(x:i64):bool{<x>0};
+f=sh(x:i64):str{<s.concat("n";"\(x)")};
+f=inc(x:i64):i64{<x+1};
+f=mk(x:i64):$pt{<$pt{x:x;y:0.5}};
+f=cnt(a:i64;x:f64):i64{if(x>4.0){<a+1};<a};
+f=ap(xs:@f64;g:(f64):f64):@f64{<xs.map(g)};
+
+f=main():$i64{
+  let fs=@(1.5;2.5;0.25);
+  let xs=@(0-3;7;0);
+  cks("f64-enc";j.enc(fs.map(&dbl));"[3,5,0.5]");
+  let ds=fs.map(&dbl);
+  let d0=ds.get(0);
+  cks("f64-interp";"\(d0)";"3");
+  cks("f64-interp-inline";"\(fs.map(&dbl).get(2))";"0.5");
+  cks("f64-compare";if(ds.get(1)==5.0){"t"}el{"f"};"t");
+  cks("bool-enc";j.enc(xs.map(&pos));"[false,true,false]");
+  let bs=xs.map(&pos);
+  cks("bool-interp";"\(bs.get(1))";"true");
+  cks("str-enc";j.enc(xs.map(&sh));"[\"n-3\",\"n7\",\"n0\"]");
+  cks("str-interp";"\(xs.map(&sh).get(1))";"n7");
+  cks("i64-enc";j.enc(xs.map(&inc));"[-2,8,1]");
+  cks("i64-interp";"\(xs.map(&inc).get(0))";"-2");
+  cks("rec-enc";j.enc(@(1;2).map(&mk));"[{\"x\":1,\"y\":0.5},{\"x\":2,\"y\":0.5}]");
+  let ps=@(1;2).map(&mk);
+  cks("rec-field";"\(ps.get(1).x),\(ps.get(1).y)";"2,0.5");
+  cks("closure-lit";j.enc(fs.map(fn(v:f64):f64{<v+0.5}));"[2,3,0.75]");
+  let k=2.0;
+  cks("closure-capture";j.enc(fs.map(fn(v:f64):f64{<v*k}));"[3,5,0.5]");
+  let half=fn(v:f64):f64{<v/2.0};
+  cks("closure-local";j.enc(fs.map(half));"[0.75,1.25,0.125]");
+  cks("closure-str";j.enc(xs.map(fn(v:i64):str{<"s"}));"[\"s\",\"s\",\"s\"]");
+  let g=&dbl;
+  cks("fnref-local";j.enc(fs.map(g));"[3,5,0.5]");
+  cks("fn-param";j.enc(ap(fs;&dbl));"[3,5,0.5]");
+  cks("chain-filter";j.enc(fs.map(&dbl).filter(&big));"[5]");
+  cks("chain-len";"\(fs.map(&dbl).len())";"3");
+  cks("chain-get";"\(fs.map(&dbl).get(1))";"5");
+  cks("chain-reduce";"\(fs.map(&dbl).reduce(0;&cnt))";"1");
+  cks("chain-map";j.enc(fs.map(&dbl).map(&dbl));"[6,10,1]");
+  let h=$hold{xs:@(1.5;2.5);n:1};
+  cks("field-recv-f64";j.enc(h.xs.map(&dbl));"[3,5]");
+  cks("field-recv-bool";j.enc(h.xs.map(&gt2));"[false,true]");
+  let m=mut.fs.map(&dbl);
+  m=m.map(&dbl);
+  cks("mut-recv";j.enc(m);"[6,10,1]");
+  <0
+};
