@@ -255,6 +255,23 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
 
 ### Security fixes
 
+- **The security nightly's `fuzz-yaml` run no longer dies of out-of-memory**
+  (127.555). It failed every night from 2026-11-24 with `libFuzzer:
+  out-of-memory (used: ~2060Mb; limit: 2048Mb)`. The cause was the fuzz
+  harness, not `std.yaml`: `test/fuzz/fuzz_yaml.c` left every
+  `yaml_from_json` / `yaml_to_json` result allocated, so memory grew with the
+  number of inputs run until it crossed the limit. The input saved as the
+  crash (`crash-yaml-oom-9422235b`, 97 bytes) is simply the one that was
+  running when that happened; replayed alone it peaks at about 16 MB. The
+  harness now frees each heap result and leaves the converters' literal
+  fallbacks alone. On a native arm64 Linux run with the nightly's settings,
+  300 s of fuzzing peaked at 645 MB and was still rising before the fix, and
+  levelled off at 411 MB after it. `make fuzz-smoke` now replays `fuzz-yaml`
+  with LeakSanitizer on under Linux (`FUZZ_LEAK_TARGETS`), so a harness or
+  converter that leaks fails the replay at once instead of slowly eating a
+  nightly. The unit is kept as
+  `test/fuzz/corpus-adversarial/yaml_nightly_oom_unit_127555.bin`.
+  `yaml.c` is unchanged.
 - **`yaml.fromjson` always returns** (127.542, a denial of service). A 35-byte
   malformed flow mapping found by the security nightly's libFuzzer run
   (`crash-yaml-oom-bcd1502b`: libFuzzer died at a 2 GiB malloc; the standalone
