@@ -19,7 +19,9 @@
 #   1. map(&pos): adapter defined without fastcc, `call fastcc i1`, `zext i1`;
 #   2. map(&dbl): adapter has `bitcast i64 %a0 to double`, `call fastcc
 #      double`, `bitcast double ... to i64`;
-#   3. runs: map(&pos) -> [0,1,0,1]; map(&dbl) first element == 3.0.
+#   3. runs: map(&pos) -> [false,true,false,true] (an @bool since 127.550;
+#      127.548 recorded the @i64-tagged [0,1,0,1]); map(&dbl) first element
+#      == 3.0.
 #
 # Negative control: main 896f6bdb fails 1-2 and prints "f64 BAD" for 3.
 #
@@ -91,8 +93,8 @@ else fail "emit-llvm failed: $(head -c 300 emit.err)"; fi
 
 if "${TKC}" --out p p.tk >build.err 2>&1; then
   out=$(./p 2>&1); rc=$?
-  want=$'[0,1,0,1]\nf64 ok'
-  [ "$rc" -eq 0 ] && [ "$out" = "$want" ] && pass "runs: [0,1,0,1] and f64 3.0" || fail "runs: rc=$rc out=$out"
+  want=$'[false,true,false,true]\nf64 ok'
+  [ "$rc" -eq 0 ] && [ "$out" = "$want" ] && pass "runs: [false,true,false,true] and f64 3.0" || fail "runs: rc=$rc out=$out"
 else fail "build failed: $(head -c 300 build.err)"; fi
 
 echo ""

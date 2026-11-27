@@ -37,6 +37,7 @@ toke 3.2.0 already accepts, so it builds on both.
 | 11 | **std.db's `row.` calls are argument-checked** (extends row 8). `row.str`, `row.i64`, `row.u64`, `row.f64` and `row.bool` name no import (`row` is a sub-namespace std.db's interface exports), so the checker judged none of their arguments: `row.str(5;"k")` checked clean and died with SIGSEGV, and a number in the column-name slot or a str in the row slot passed too. They are now judged against std.db's records as any std call is: an integer other than `0` where `$dbrow` is declared, and a value of another kind in either slot, is **E4031 with no `fix`**. Measured before landing (`--check`, this checker against the same tree without it): every source that calls `row.*` -- the toke tree (`test/e2e/e2e_db_open.tk`), ooke `main` (`src/store.tk`, `test/store/test_store.tk`) and the corpus's doc examples (6 records) -- draws the same diagnostics as before; toke-test-programs and the website have none. | 138.62 | pass the `$dbrow` (or a `$dbrow{cols:..}` literal) and a `str` column name; keep `0` as the null row |
 | 12 | **A field read of an opaque std type is E4034 at `--check`** (138.65). A type its `.tki` marks `"opaque": true` -- `$csvreader`, `$csvwriter`, `$dataframe`, `$jsonstream`, `$router`, `$handler`, `$middleware`, `$modelhandle` -- declares fields that are no layout toke can read, and the flag was never read: `w.sep` on `csv.writer(44)` printed 0, `d.ncols` on a frame printed its column array's address (`d.nrows` the column count), `r.id` on a router its first route pointer, and `r.pos` on a `$csvreader` (a registry token since 138.63) died with SIGSEGV. The read is now refused, with no `fix`. `$dashboard`, `$htmldoc`, `$llmstream`, `$canvasop` and `$dtreemodel`, whose fields are their checked C layout, lose the flag and read as before; `make check-tki-layout` fails a `tki-record` that is marked opaque. Record literals of opaque types still build. | 138.65 | Use the module's functions: `df.shape(d).rows`/`.cols` for a frame's counts; the csv, json stream, router and infer handles expose nothing else. Measured over the toke tree, ooke main, the website and toke-test-programs: no source reads one of these fields. |
 | 13 | **E5001 is emitted: inside an `{arena}` block, a heap value assigned to a module-level `mut` is rejected** (127.526). The check walked the block's children, and the block's one child is its statement list, so no input ever drew E5001 (`m=test;let g=mut.0;f=bad():i64{{arena g=1}<g};` checked clean). Now, at any depth of the block (inside a nested `if` or `lp` too), assigning a `str`, array, map, struct or sum, closure, or an error union whose value is one of these to a module-level `mut` binding is **E5001, with no `fix`**; `got` is the value's type. Not rejected: a scalar (the rule memory-model §2.4 stated before this change also rejected `g=1`, which allocates nothing and cannot escape; §2.4 now states the narrower rule, the module-level-mut part of route E1 of the `{arena}` ADR, ADR-0016, still Proposed), a store to a binding of the enclosing function (the ADR's open question), a value whose type the checker leaves unresolved, a local that shadows the module name. `{arena}` still releases nothing. Measured before landing (`--check`, this checker against its base `3a8f0ae6`): no program newly refused in the toke tree (695 sources), ooke `main` (32), the website (26) or toke-test-programs (3,573); none of them assigns inside `{arena}`. Tests: D770-D773. | 127.526 | Bind the value inside the block, or move the store to the module-level binding out of the block. |
+| 14 | **What `task.spawn(s;f)` and `sc{ spawn f }` run must be a function value taking no parameters: E4081** (127.549). `task.tki` declares the parameter `i64`, so any integer checked clean and the pool thread called it as code; a function with parameters read garbage for them; and `task.spawn(s;w())` / `spawn w()` called `w` at once, on the spawning thread, and spawned its result. Each is now E4081 at `--check` (type_check, `expected` `():T`, `got` the operand's type), with no `fix`. `&w`, a bare function name, a closure and a call returning a `():T` closure are unchanged. Measured: no site in the toke tree (outside the parse-only grammar fragments and the python-view fixture, which are not type-checked), ooke main or the website calls task.spawn or `spawn`. | 127.549 | write `&w` (or a closure) for the function the task should run; to run a function with arguments, spawn a closure that calls it |
 
 Measured before the flip with this checker against main `685aa852` (rows 127.319, 127.323
 and 127.462, batch Z211): 92 of 695 toke-tree sources and 15 of 509 documentation programs;
@@ -215,6 +216,42 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   calls through a function value in toke (`let g=&f; g(x)`) are unchanged.
   A sort comparator that itself sorts no longer replaces the outer sort's
   comparator. Tests: C2295–C2299, `test/standalone/test_127_548.tk`.
+- **`xs.map(f)` is an array of `f`'s return type** (127.550). After 127.548
+  `@(1.5;2.5).map(&dbl)` stored the right doubles, but the result was still
+  typed `@i64`: `j.enc(..)` printed `[4613937818241073152,...]` and
+  `"\(ds.get(0))"` printed the bit pattern. A `str` map encoded its string
+  pointers as numbers, a record map encoded addresses, and a `bool` map
+  encoded and interpolated `0`/`1`. The checker now types `.map` on a known
+  array as `@(R)`, where `R` is the declared return of the function value:
+  `&f`, a closure with a declared return, a `let g=&f` value or a function
+  parameter. The emitter's fallback tag, used for a receiver the checker does
+  not type (a record field, a reassigned `mut`), now finds the function by its
+  module-qualified symbol. Before, it looked up the bare name, never found it,
+  and answered `@i64`. Two consequences can change a program. A `bool` map
+  now encodes as `[false,true]` (127.548's tests recorded `[0,1]`). A
+  mismatched use of the result is now E4031, for example
+  `let a:@i64=fs.map(&dbl)` or `let s:str=fs.map(&dbl).get(0)`. A closure with
+  no declared return and a fallible function are left untyped, as before.
+  Tests: C2300–C2304, `test/standalone/test_127_550.tk`.
+- **`task.spawn` and the `spawn` keyword run any function value correctly,
+  on every target** (127.549, the 127.548 defect in std.task). task.c called
+  the value it was handed as `int64_t f(void)`: a `bool` task's
+  `task.result` read an i1 register whose upper bits x86-64 leaves
+  undefined, an `f64` task's result sat in a float register C never read
+  (0 on arm64 too), and a closure was called as code (SIGBUS; a closure
+  literal did not even build). Compiled code now calls
+  `tk_task_spawn_fv(scope, adapter, value)` with the 127.548 C-ABI adapter
+  (no arguments), and `task.result` is the result widened to `i64`: 0/1 for
+  a `bool`, the bits of an `f64` (`math.frombits`), a narrow integer by its
+  signedness. A closure task holds a reference to its environment from the
+  spawn until the function has returned, or until the task is refused or
+  skipped by `task.cancel` (task.c releases it; the count is atomic), so it
+  outlives the spawning function safely. The completion flag is now
+  published with release/acquire ordering, and a task whose queue entry
+  cannot be allocated finishes with -1 instead of hanging `awaitall`.
+  `tk_task_spawn(scope, fn)` remains as the C entry for a C function. See
+  Breaking change 14 for E4081. `sc` without `i=task:std.task;` still fails
+  to link (127.553). Tests: C2305–C2309, `test/standalone/test_127_549.tk`.
 
 ### Security fixes
 
@@ -401,6 +438,19 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   for llguidance and XGrammar). `docs/spec/toke-lexeme.lark` and `toke-xgr.gbnf` had
   no dead rules and are byte-identical. `scripts/grammar_mutation.py` gains
   `dead_rules(text, dialect)`, the reachability its mutation pass already used.
+- **`toke.gbnf` accepts reading a field named `fn`** (131.152). A record may declare
+  a field `fn` (`t=$p{fn:i64}`, the literal `$p{fn:1}`), and `tkc` parses `x.fn`,
+  `x.fn(1)`, `x.0.fn` and `h().fn` as field reads, but the grammar's member name
+  after `.` was `vname`, which excludes `fn`, so a constrained decoder could never
+  emit a read of such a field. The member name is now `ident` (`tlg-d`); `fn` as a
+  plain name with a postfix (`fn.x`) stays a KNOWN under-approximation, and
+  `x.fn(a:i64):i64{..}` and `x.fn=1` stay rejected by both. Regenerated
+  `docs/spec/toke.lark`, `toke-lexeme.lark` and `toke-xgr.gbnf` (one line each).
+  New seed `test/gbnf/extra/x95.tk` (field reads in let, call, index chains, comments
+  around `.`, cast, propagate, `if`/`lp` conditions, unary operands, a struct literal
+  receiver and a `mt` subject); `test/gbnf/fragments.json` 2541 -> 2549. Against the
+  previous `toke.gbnf` the seed is a parser-only accept and the gate fails. Production
+  and nonterminal counts unchanged (339 / 658).
 
 - **`make fuzz-smoke` replays its inputs under libFuzzer** (127.480). It passed
   libFuzzer a seed directory plus adversarial files, a mix libFuzzer refuses

@@ -89,16 +89,16 @@ Every `tk_*` function defined in `src/stdlib/*.c` that no `.tki` export resolves
 
 | Class | Meaning | Symbols |
 |---|---|---|
-| `emitted` | the compiler emits a call to it by name: a lowering target | 73 |
+| `emitted` | the compiler emits a call to it by name: a lowering target | 74 |
 | `c-internal` | called only from other C in `src/stdlib/` | 173 |
 | `alias` | reachable from toke only under a spelling generation will not publish -- a legacy alias of a published name | 9 |
 | `c-api` | a documented C entry point: no toke spelling and no caller in `src/`, but a header, doc page or test names it as API (`scripts/stdlib_c_api.txt` cites which) | 29 |
 | `dead` | nothing in `src/` calls it, no toke spelling reaches it and it is not a documented C API (a unit test under `test/` may call it); each is acknowledged in `scripts/stdlib_c_api.txt` with the reason | 1 |
-| | **total** | **285** |
+| | **total** | **286** |
 
 A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the conformance harness -- and is listed with the file that documents it. A `dead` symbol is finished or half-finished code with no way in: wiring it up is an interface decision, and deleting it is a glue decision. Neither is made by this page.
 
-### `emitted` (73)
+### `emitted` (74)
 
 | Symbol | Defined in | Detail |
 |---|---|---|
@@ -175,6 +175,7 @@ A `c-api` symbol is kept for C callers -- an embedder, a C unit test, the confor
 | `tk_str_len` | `tk_runtime.c` | - |
 | `tk_str_to_float_w` | `str_glue.c` | - |
 | `tk_str_to_int` | `str_glue.c` | - |
+| `tk_task_spawn_fv` | `task.c` | - |
 
 ### `c-internal` (173)
 

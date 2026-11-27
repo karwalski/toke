@@ -35,7 +35,8 @@ f=main():$i64{
   cks("filter-bool-fn";j.enc(xs.filter(&pos));"[7,9,4]");
   cks("filter-bool-fn-neg-only";j.enc(@(0-1;0-2;0-3).filter(&pos));"[]");
   cks("filter-bool-even";j.enc(xs.filter(&even));"[0,-8,4]");
-  cks("map-bool-fn";j.enc(xs.map(&pos));"[0,1,0,1,0,1]");
+  (* 127.550: the result is @bool (it was tagged @i64 and encoded 0/1) *)
+  cks("map-bool-fn";j.enc(xs.map(&pos));"[false,true,false,true,false,true]");
   cks("filter-i64-pred-2";j.enc(xs.filter(&two));"[7,9,4]");
   cks("filter-bool-closure";j.enc(xs.filter(fn(x:i64):bool{<x>0}));"[7,9,4]");
   let k=5;

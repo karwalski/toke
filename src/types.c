@@ -6733,7 +6733,7 @@ static const Type *recv_value_type(Ctx *cx, const Node *recv) {
  *   str .split / .chars / .fields -> @str (std.str `split(..):@$str`;
  *       tk_str_chars_w / tk_str_fields_w build arrays of strings; the
  *       emitter's "@str" list).
- * `.map` is not modelled: its element type is the mapped function's return.
+ * `.map` needs its argument, so recv_map_result_type (127.550) answers it.
  */
 static Type *recv_result_on(Ctx *cx, const Type *rt, const char *member) {
     if (!rt || !member) return NULL;
@@ -6760,6 +6760,50 @@ static Type *recv_result_on(Ctx *cx, const Type *rt, const char *member) {
         }
     }
     return NULL;
+}
+
+/*
+ * recv_map_result_type (127.550) -- `xs.map(f)` on an ESTABLISHED array is an
+ * array of f's RETURN type, or NULL when that is not known.
+ *
+ * Unmodelled, `@(1.5;2.5).map(&dbl)` with dbl:(f64):f64 had no type, and the
+ * emitter's fallback tag called it @i64, so `j.enc(..)` and `"\(d0)"` on its
+ * elements printed the doubles' bit patterns (4613937818241073152 for 3.0)
+ * although tk_arr_map stored the right values (127.548's adapter).  The
+ * function value's signature is read the way a call through it is judged:
+ * `&f` of a module function (func_ref_sig), a closure literal with a declared
+ * return (params_sig; one without has no stated type and stays unmodelled),
+ * a local or parameter holding a function value (fnval_binding /
+ * fnval_bind_sig: `let g=&f`, `p:(i64):f64`), or the argument's own rtype.
+ * Only a one-parameter signature whose return is fully known, not void and
+ * not an error union is modelled (a fallible callee has no element value to
+ * store); anything else is left as it was.  The element is the declared
+ * return itself -- tk_arr_map stores what the adapter widened from it, the
+ * same slot an @T of that T holds.
+ */
+static Type *recv_map_fn_sig(Ctx *cx, const Node *a) {
+    if (!a) return NULL;
+    Type *sig = NULL;
+    if (a->kind == NODE_FUNC_REF) sig = func_ref_sig(cx, a);
+    else if (a->kind == NODE_CLOSURE) sig = params_sig(cx, a, 1);
+    else if (a->kind == NODE_IDENT) {
+        const Node *b = fnval_binding(cx, a);
+        sig = b ? fnval_bind_sig(cx, b, 0) : NULL;
+    }
+    if (!func_has_sig(sig) && func_has_sig(a->rtype)) sig = a->rtype;
+    return func_has_sig(sig) ? sig : NULL;
+}
+static Type *recv_map_result_type(Ctx *cx, const Type *rt, const Node *call) {
+    if (!rt || rt->kind != TY_ARRAY || !call || call->child_count != 2) return NULL;
+    Type *sig = recv_map_fn_sig(cx, call->children[1]);
+    if (!sig || sig->field_count != 1) return NULL;
+    Type *ret = sig->elem;
+    if (!ret || ret->kind == TY_VOID || ret->kind == TY_ERROR_TYPE
+        || tk_type_has_unknown(ret)) return NULL;
+    Type *at = mk_type(cx->env->arena, TY_ARRAY);
+    if (!at) return NULL;
+    at->elem = ret;
+    return at;
 }
 
 /*
@@ -6799,6 +6843,7 @@ static Type *recv_method_result_type(Ctx *cx, const Node *call) {
     }
     const Type *rt = recv_value_type(cx, recv);
     if (!rt) return NULL;
+    if (strcmp(member, "map") == 0) return recv_map_result_type(cx, rt, call);
     return recv_result_on(cx, rt, member);
 }
 
@@ -6992,6 +7037,57 @@ static void check_map_getor_default(Ctx *cx, const Node *call) {
              "values are '%s'", dn_, vn);
     diag_emit(DIAG_ERROR, E4031, dn->start, dn->line, dn->col, msg,
               "expected", vn, "got", dn_, (const char *)NULL);
+}
+
+/* 127.549: what a task runs.  `task.spawn(scope;f)` and `sc{ spawn f }` hand
+ * the runtime a function VALUE, which a pool thread calls with no arguments
+ * (through the C-ABI adapter llvm.c emits for its signature).  task.tki
+ * declares the parameter `i64`, so nothing judged the argument: an integer
+ * was called as code, a function with parameters read garbage for them, and
+ * `spawn w()` called w at once and spawned its RESULT.  E4081 for an
+ * operand whose type is known and is not a function value taking no
+ * parameters.  No `fix`: whether `&w`, a closure, or a different function
+ * was meant is the program's call. */
+static void check_task_operand(Ctx *cx, const Node *at, const Node *fn_n,
+                               const char *form) {
+    if (!fn_n) return;
+    const Type *t = fn_n->rtype ? fn_n->rtype : infer(cx, fn_n);
+    if (!t || t->kind == TY_UNKNOWN) return;
+    if (func_has_sig(t) && t->field_count == 0) return;
+    if (!tc_first_report(cx, at) || !tc_can_emit(cx)) return;
+    char tn[96], msg[512];
+    snprintf(tn, sizeof tn, "%s", type_name(t));
+    if (func_has_sig(t))
+        snprintf(msg, sizeof msg,
+                 "%s runs a function with no arguments, and this function "
+                 "value of type '%s' takes %d parameter%s", form, tn,
+                 t->field_count, t->field_count == 1 ? "" : "s");
+    else if (fn_n->kind == NODE_CALL_EXPR)
+        snprintf(msg, sizeof msg,
+                 "%s runs a function value, and this operand is a call whose "
+                 "result is a '%s': the call would run now, on this thread -- "
+                 "pass the function itself (`&name`) or a closure", form, tn);
+    else
+        snprintf(msg, sizeof msg,
+                 "%s runs a function value, and this operand is a '%s'",
+                 form, tn);
+    diag_emit(DIAG_ERROR, E4081, fn_n->start, fn_n->line, fn_n->col, msg,
+              "expected", "():T", "got", tn, (const char *)NULL);
+}
+static void check_task_spawn_call(Ctx *cx, const Node *call) {
+    if (!call || call->child_count != 3) return;
+    const Node *cal = call->children[0];
+    if (!cal || cal->kind != NODE_FIELD_EXPR || cal->child_count < 2
+        || !cal->children[0] || !cal->children[1]
+        || cal->children[0]->kind != NODE_IDENT) return;
+    char mb[16]; TOKSTR(mb, cx->src, cal->children[1]);
+    if (strcmp(mb, "spawn") != 0) return;
+    char ab[128]; TOKSTR(ab, cx->src, cal->children[0]);
+    char pb[256];
+    const char *mp = alias_shadowed(cx, cal->children[0]) ? NULL
+                   : import_module_path(cx, ab, pb, sizeof pb);
+    if (!mp || strcmp(mp, "std.task") != 0) return;
+    check_task_operand(cx, call, call->children[2], "task.spawn");
 }
 
 /* 127.226: a type node standing where a literal element would be. */
@@ -8268,6 +8364,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             check_array_store_elem(cx,node);
             /* 127.324: and a map's getor default must be a V. */
             check_map_getor_default(cx,node);
+            /* 127.549: and what task.spawn runs must be a ():T value. */
+            check_task_spawn_call(cx,node);
             /* 127.323: and a fallible result passed as a std argument,
              * unless one of the checks above reported this call. */
             std_call_union_args(cx,node,uats,nuats,diag_error_count()!=uec0);
@@ -9955,7 +10053,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
     }
     /* spawn expr — returns task handle (i64) (story 76.1.1b) */
     case NODE_SPAWN_EXPR: {
-        if (node->child_count>0) infer(cx,node->children[0]);
+        if (node->child_count>0) {
+            infer(cx,node->children[0]);
+            check_task_operand(cx,node,node->children[0],"spawn");   /* 127.549 */
+        }
         return mk_type(A,TY_I64);
     }
     default: {

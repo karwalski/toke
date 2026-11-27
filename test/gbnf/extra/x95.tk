@@ -1,0 +1,1 @@
+m=a;t=$p{fn:i64;q:$p};f=g(x:$p):i64{let a=x.fn;let b=x.fn(1);let c=x.0.fn;let d=h().fn;let e=x . (*c*)fn.fn.0;let k=$p{fn:1}.fn;let n=x.fn as i64;if(x.fn){rt x.fn!$e};lp(x.fn<3){br};let o=@(&x.fn;-x.fn;!x.fn;x.fn&&1);rt mt x.fn{$a:v 1}};

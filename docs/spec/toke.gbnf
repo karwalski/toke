@@ -127,11 +127,12 @@ cp-nt-p     ::= prim-ref cast-w | prim-typ cast1-w | prim-p-ep cast-p
               | prim-p tl-ew cast-w | prim-p tl-ep cast-p
 
 # postfix tail: calls (args), fields .name, constant indexes .0
+# (a field may be named `fn`, so the member name is `ident`, not `vname`: 131.152)
 tl-ew       ::= tlg* (tlg-d | idx idx2*)
 tl-ep       ::= tlg* tlg-c
 tlg         ::= tlg-c | tlg-d
 tlg-c       ::= (idx idx2*)? ws "(" ws args? ws ")"
-tlg-d       ::= (idx idx2*)? ws "." ws vname
+tlg-d       ::= (idx idx2*)? ws "." ws ident
 idx         ::= ws "." ws int
 idx2        ::= ws1 "." ws int | "." ws1 int
 args        ::= expr (ws ";" ws expr)*
