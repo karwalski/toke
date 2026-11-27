@@ -24,13 +24,16 @@
 # offered whenever `mut.` is found, as before 131.104) 1b 1c 1d 1e 2 3 4 5 6
 # and "10 r" fail -- 9 passed / 10 failed.
 #
-# Story: 131.104
+# Story: 131.104, 127.558
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/toke}"
 RUN="${REPO_ROOT}/test/run_test.sh"
+# 127.558: a build's alarm is a hang guard only -- 30 s killed slow builds on a
+# loaded host; a timeout is reported as such, not as "build-failed".
+BUILD_SECS="${TK_CONFORM_BUILD_SECS:-600}"
 if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
 PASS=0; FAIL=0
 expect() {
@@ -49,7 +52,10 @@ fix_for() {
 }
 # out FILE -> the program's output and exit status, or "build-failed"
 out() {
-    "${RUN}" 30 "${TKC}" "$1" -o "$1.bin" >/dev/null 2>&1 || { echo "build-failed"; return; }
+    local rc=0
+    "${RUN}" "${BUILD_SECS}" "${TKC}" "$1" -o "$1.bin" >/dev/null 2>&1 || rc=$?
+    [ "${rc}" -eq 142 ] && { echo "build-timed-out-after-${BUILD_SECS}s (a hang)"; return; }
+    [ "${rc}" -eq 0 ] || { echo "build-failed"; return; }
     "${RUN}" 20 "$1.bin" 2>&1; echo "rc=$?"
 }
 

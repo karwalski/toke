@@ -383,6 +383,18 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
 
 ### Build and CI gates
 
+- **C663 and C850 no longer fail because the host is busy** (127.558). At load
+  averages of 60-250, 4 of C850's 17 checks failed because a compile ran past its 20 s
+  alarm and left no binary. C663 failed with "largest delay 400" because 3 s of
+  crashing was not always enough to drive a slot's streak to the cap. C663 now
+  checks the backoff schedule the supervisor logs: every line must be
+  `delay = min(BASE * 2^(streak-2), CAP)`, and the crashing continues until one
+  line reaches CAP. The reset check waits until both workers exist before it starts
+  the stable-uptime clock. Each of its waits ends when the event happens, under a
+  60 s hang guard. Builds in C850, C900 and C901 get a 600 s hang guard
+  (`TK_CONFORM_BUILD_SECS`), and a build that times out is reported by name.
+  No C code changed.
+
 - **`make fuzz-smoke` fails on an input that never returns, instead of hanging**
   (127.545). Each replayed input now has `FUZZ_REPLAY_TIMEOUT` seconds (default 25,
   `0` turns it off): the standalone driver arms an alarm per input and exits 70 with

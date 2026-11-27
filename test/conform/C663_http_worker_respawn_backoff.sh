@@ -20,23 +20,31 @@
 # BASE=100 ms, CAP=800 ms, STABLE=1500 ms, serving /ok and /crash (abort()) on
 # two pre-fork workers, plain and (when OpenSSL is here) TLS.  Asserted:
 #   1. bounded: 3 s of back-to-back /crash requests make at most 40 worker
-#      lives (the schedule allows ~7 per slot; main: one per request), and
-#      backoff lines appear;
-#   2. capped: no delay exceeds CAP, and the delay reaches CAP;
-#   3. recovers: /ok answers 200 again within CAP + 3 s of the crashes ending;
+#      lives (the schedule allows ~7 per slot; main: one per request);
+#   2. the schedule: crashing continues until a line reaches CAP; every line's
+#      delay is exactly min(BASE * 2^(streak-2), CAP) -- so none exceeds CAP --
+#      and one reaches CAP;
+#   3. recovers: /ok answers 200 again after the crashes end;
 #   4. resets: after STABLE of uptime, the next backoff line is the BASE delay
 #      at streak 2, not a continuation of the old streak.
+# 2 and 4 read the delays the supervisor computed and logged, not wall-clock
+# gaps, and every wait is "until it happens, under a 60 s hang guard", so host
+# load cannot change the verdict (127.558; see "Timing" below).
 #
 # Negative control: C663_STDLIB=<dir> builds against another stdlib tree.
-# Against main's src/stdlib, 1 fails (72 / 59 lives, no backoff lines), and
-# 2 and 4 fail (no lines); 3 passes (main never stops respawning).
+# Against main's src/stdlib, 1 fails (72 / 59 lives), and 2 and 4 fail (no
+# lines; 2 after its 60 s guard); 3 passes (main never stops respawning).
+# 1 is the only wall-clock bound left, and load can only make it pass: on a
+# busy host curl is slower, so the regression can make fewer than 40 lives
+# (38 / 16 at load ~110 with respawn_delay forced to 0).  2 and 4 still fail
+# on that regression whatever the load.
 #
 # Note: with every slot waiting out a backoff there is no child, and
 # waitpid()'s ECHILD ends the supervision loop (on main it also did so when
 # every fork failed, and the server returned).  ECHILD with a respawn pending
 # now means "nothing yet"; check 3 is what catches a regression there.
 #
-# Story: 121.29
+# Story: 121.29, 127.558
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -86,14 +94,33 @@ int main(int argc, char **argv) {
 }
 EOF
 
+# backoff_lines FILE -- the supervisor's backoff lines, as "slot streak delay".
+backoff_lines() {
+    sed -n 's/^DIAGNOSTIC: kind=worker_respawn_backoff slot=\([0-9]*\) streak=\([0-9]*\) delay_ms=\([0-9]*\)$/\1 \2 \3/p' "$1"
+}
+nlines() { grep -c 'kind=worker_respawn_backoff' "$1"; }
+# live_workers PID -- the server's children that are not zombies.
+live_workers() { ps -A -o ppid=,stat= | awk -v p="$1" '$1 == p && $2 !~ /Z/' | wc -l | tr -d ' '; }
+crash_once() { curl -sk --max-time "${REQ_SECS}" -o /dev/null "$1/crash" 2>/dev/null; }
+
+# Timing (127.558).  What is asserted is the schedule the supervisor COMPUTES,
+# read from its own lines, never a wall-clock gap: under host load 60-250 the
+# old fixed 3 s of crashing could end before any slot's streak reached the
+# cap ("largest delay 400").  So the crashing goes on until a cap line is
+# logged (or DEADLINE_SECS, a hang guard), each request may take REQ_SECS,
+# and the reset check waits for both workers to EXIST before it starts the
+# stable-uptime clock, instead of guessing how long the respawn fork takes.
+REQ_SECS=2; DEADLINE_SECS=60
+
 # scenario NAME SCHEME BIN [ARGS...]
 scenario() {
     local name="$1" scheme="$2" bin="$3"; shift 3
     local d="${WORK}/run_${name}"; mkdir -p "${d}"
     "${bin}" "${d}/lives" "$@" > "${d}/out" 2> "${d}/err" &
     SRV=$!
-    local port=""
-    for _ in $(seq 1 80); do
+    local port="" t0
+    t0=$(date +%s)
+    while [ $(( $(date +%s) - t0 )) -lt "${DEADLINE_SECS}" ]; do
         port="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' "${d}/err" | head -1)"
         [ -n "${port}" ] && break
         kill -0 "${SRV}" 2>/dev/null || break
@@ -104,38 +131,63 @@ scenario() {
         stop "${SRV}"; SRV=""; return
     fi
     local u="${scheme}://127.0.0.1:${port}"
-    # 1. hammer /crash for 3 s
+    # 1. bounded: 3 s of back-to-back /crash requests.  An upper bound on
+    #    lives, which load only makes easier to meet; main made one per request.
     local end=$(( $(date +%s) + 3 ))
-    while [ "$(date +%s)" -lt "${end}" ]; do
-        curl -sk --max-time 0.3 -o /dev/null "${u}/crash" 2>/dev/null
-    done
-    local lives lines maxd
+    while [ "$(date +%s)" -lt "${end}" ]; do crash_once "${u}"; done
+    local lives
     lives="$(wc -l < "${d}/lives" 2>/dev/null | tr -d ' ')"; lives="${lives:-0}"
-    lines="$(grep -c 'kind=worker_respawn_backoff' "${d}/err")"
-    if [ "${lives}" -le 40 ] && [ "${lives}" -ge 2 ] && [ "${lines}" -ge 2 ]; then
-        pass "${name}: 3 s of crashing requests: ${lives} worker lives, ${lines} backoff lines"
+    if [ "${lives}" -le 40 ] && [ "${lives}" -ge 1 ]; then
+        pass "${name}: 3 s of crashing requests: ${lives} worker lives"
     else
-        fail "${name}: 3 s of crashing requests: ${lives} worker lives (want 2..40), ${lines} backoff lines"
+        fail "${name}: 3 s of crashing requests: ${lives} worker lives (want 1..40)"
     fi
-    # 2. capped
-    maxd="$(sed -n 's/.*kind=worker_respawn_backoff .*delay_ms=\([0-9]*\).*/\1/p' "${d}/err" | sort -n | tail -1)"
-    if [ "${maxd:-0}" = 800 ]; then pass "${name}: delay reaches and never exceeds the 800 ms cap"
-    else fail "${name}: largest delay ${maxd:-none}, want exactly the 800 ms cap"; fi
-    # 3. recovers
-    local code="" t0; t0=$(date +%s)
-    while [ $(( $(date +%s) - t0 )) -lt 4 ]; do
-        code="$(curl -sk --max-time 0.5 -o /dev/null -w '%{http_code}' "${u}/ok" 2>/dev/null)"
+    # 2. the schedule: keep crashing until a slot's streak reaches the cap.
+    #    Every line must carry delay = min(BASE * 2^(streak-2), CAP) -- a
+    #    stable-uptime reset under load starts a streak over at streak=2, which
+    #    the rule covers -- and one line must reach the cap.
+    t0=$(date +%s)
+    while ! grep -q 'kind=worker_respawn_backoff .*delay_ms=800$' "${d}/err" &&
+          [ $(( $(date +%s) - t0 )) -lt "${DEADLINE_SECS}" ]; do
+        crash_once "${u}"
+    done
+    local bad nl maxd
+    nl="$(nlines "${d}/err")"
+    bad="$(backoff_lines "${d}/err" | awk '{
+            want = 100; for (i = 2; i < $2 && want < 800; i++) want *= 2;
+            if (want > 800) want = 800;
+            if ($2 < 2 || $3 != want) { print "slot=" $1 " streak=" $2 " delay_ms=" $3 " (want " want ")"; exit } }')"
+    maxd="$(backoff_lines "${d}/err" | awk '$3 > m { m = $3 } END { print m + 0 }')"
+    if [ "${nl}" -ge 2 ] && [ -z "${bad}" ] && [ "${maxd}" = 800 ]; then
+        pass "${name}: ${nl} backoff lines follow 100*2^(streak-2) and reach the 800 ms cap"
+    elif [ -n "${bad}" ]; then
+        fail "${name}: backoff line off the schedule: ${bad}"
+    else
+        fail "${name}: ${nl} backoff lines, largest delay ${maxd} after ${DEADLINE_SECS} s of crashing, want the 800 ms cap"
+    fi
+    # 3. recovers: /ok answers 200 again once the crashes stop.  The pending
+    #    respawn is due within CAP; the deadline only guards a supervisor that
+    #    gave up (main's ECHILD exit), which never recovers.
+    local code=""; t0=$(date +%s)
+    while [ $(( $(date +%s) - t0 )) -lt "${DEADLINE_SECS}" ]; do
+        code="$(curl -sk --max-time "${REQ_SECS}" -o /dev/null -w '%{http_code}' "${u}/ok" 2>/dev/null)"
         [ "${code}" = 200 ] && break
         sleep 0.1
     done
     if [ "${code}" = 200 ]; then pass "${name}: /ok is 200 again after the crashes stop"
-    else fail "${name}: /ok is '${code}' 4 s after the crashes stopped"; fi
-    # 4. resets after stable uptime: let both workers live past STABLE
+    else fail "${name}: /ok is '${code}' ${DEADLINE_SECS} s after the crashes stopped"; fi
+    # 4. resets after stable uptime.  Both workers must be running before the
+    #    STABLE clock starts (a slot still in backoff would carry its streak);
+    #    then let them live past STABLE.
+    t0=$(date +%s)
+    while [ "$(live_workers "${SRV}")" -lt 2 ] && [ $(( $(date +%s) - t0 )) -lt "${DEADLINE_SECS}" ]; do
+        sleep 0.1
+    done
     sleep 2.2
-    local before first; before="$(grep -c 'kind=worker_respawn_backoff' "${d}/err")"
-    for _ in 1 2 3 4 5 6; do
-        curl -sk --max-time 0.3 -o /dev/null "${u}/crash" 2>/dev/null
-        [ "$(grep -c 'kind=worker_respawn_backoff' "${d}/err")" -gt "${before}" ] && break
+    local before first; before="$(nlines "${d}/err")"
+    t0=$(date +%s)
+    while [ "$(nlines "${d}/err")" -le "${before}" ] && [ $(( $(date +%s) - t0 )) -lt "${DEADLINE_SECS}" ]; do
+        crash_once "${u}"
         sleep 0.05
     done
     first="$(grep 'kind=worker_respawn_backoff' "${d}/err" | sed -n "$((before + 1))p")"
