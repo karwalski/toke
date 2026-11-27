@@ -5881,6 +5881,111 @@ int recv_method_on_kind(const char *member, char kind);
 
 static const Type *recv_value_type(Ctx *cx, const Node *recv);
 
+static Type *recv_map_fn_sig(Ctx *cx, const Node *a);   /* 127.550 */
+/*
+ * check_combinator_fn_sig (127.552) -- the function value handed to `.map`,
+ * `.filter`, `.reduce`, `.fold` or `.sort` is judged against the receiver's
+ * ESTABLISHED element type T.
+ *
+ * E4026 (recv_method_arity) checks only the combinator's own argument count,
+ * so `fs.map(&add)` with add:(f64;f64):f64 and `@(1;2).map(&dbl)` with
+ * dbl:(f64):f64 passed --check: at run time 127.548's adapter read an
+ * argument slot nobody passed, or bitcast an i64 element to a double.  The
+ * runtime calls the value as (glue, collections_glue.c):
+ *   map    f(T)        -- the result is the new element (127.550 types it);
+ *   filter f(T)        -- a predicate: kept when the i64 it widens to is
+ *                         non-zero, so bool or an integer;
+ *   reduce/fold f(A;T) -- A the accumulator, seeded by `init` and replaced by
+ *                         each return, so init and the return must be an A;
+ *   sort   f(T;T)      -- a comparator read by its sign ((r>0)-(r<0)), so a
+ *                         number or a bool, as tk_arr_sort accepts today.
+ * The signature is read exactly as recv_map_fn_sig reads it; a value with no
+ * known signature, a parameter or return the checker leaves unknown, and a
+ * receiver whose element type is not established are not judged.  The
+ * parameter count and each parameter are judged with types_compat (the
+ * value-flow rule a direct call uses: the element flows into the parameter),
+ * `init` also with lit_narrows.  One E4031 on the function argument (on
+ * `init` for an init that is not an A), no `fix`: whether the function or
+ * the receiver is wrong is the program's to decide.
+ */
+static void check_combinator_fn_sig(Ctx *cx, const Node *call, const char *member,
+                                    const Type *rt) {
+    int nparams, fi;
+    int is_map = !strcmp(member, "map"), is_filter = !strcmp(member, "filter");
+    int is_sort = !strcmp(member, "sort");
+    int is_reduce = !strcmp(member, "reduce") || !strcmp(member, "fold");
+    if (is_map || is_filter || is_sort) { fi = 1; nparams = is_sort ? 2 : 1; }
+    else if (is_reduce) { fi = 2; nparams = 2; }
+    else return;
+    if (!rt || rt->kind != TY_ARRAY || !rt->elem || tk_type_has_unknown(rt->elem))
+        return;
+    if (call->child_count != fi + 1 || !call->children[fi]) return;
+    const Node *fa = call->children[fi];
+    Type *sig = recv_map_fn_sig(cx, fa);
+    if (!sig) return;
+    const Type *T = rt->elem;
+    const Type *A = (is_reduce && sig->field_count == 2) ? sig->field_types[0] : NULL;
+    int known_A = A && A->kind != TY_UNKNOWN && !tk_type_has_unknown(A);
+    char exp[256], why[160]; why[0] = '\0';
+    const char *tn = type_name(T);
+    if (is_map) snprintf(exp, sizeof exp, "(%s):R", tn);
+    else if (is_filter) snprintf(exp, sizeof exp, "(%s):bool", tn);
+    else if (is_sort) snprintf(exp, sizeof exp, "(%s;%s):i64", tn, tn);
+    else if (known_A) snprintf(exp, sizeof exp, "(%s;%s):%s", type_name(A), tn, type_name(A));
+    else snprintf(exp, sizeof exp, "(A;%s):A", tn);
+    const Node *at_node = fa;
+    if (sig->field_count != nparams) {
+        snprintf(why, sizeof why, "it takes %d parameter%s, and '.%s' calls it with %d",
+                 sig->field_count, sig->field_count == 1 ? "" : "s", member, nparams);
+    } else {
+        for (int i = 0; i < nparams && !why[0]; i++) {
+            if (is_reduce && i == 0) continue;            /* the accumulator */
+            const Type *pt = sig->field_types[i];
+            if (!pt || pt->kind == TY_UNKNOWN || tk_type_has_unknown(pt)) continue;
+            if (!types_compat(T, pt))
+                snprintf(why, sizeof why, "its parameter %d is a '%s', and '.%s' passes "
+                         "it an element of a '%s'", i + 1, type_name(pt), member,
+                         type_name(rt));
+        }
+        const Type *ret = sig->elem;
+        int known_ret = ret && ret->kind != TY_UNKNOWN && !tk_type_has_unknown(ret);
+        if (!why[0] && known_ret && is_filter
+            && !(ret->kind == TY_BOOL || is_integer(ret)))
+            snprintf(why, sizeof why, "it returns a '%s', and '.filter' keeps an "
+                     "element by a bool (or integer) predicate", type_name(ret));
+        if (!why[0] && known_ret && is_sort
+            && !(ret->kind == TY_BOOL || is_numeric(ret)))
+            snprintf(why, sizeof why, "it returns a '%s', and '.sort' orders by the "
+                     "sign of a numeric comparator", type_name(ret));
+        if (!why[0] && is_reduce && known_A && known_ret && !types_compat(ret, A))
+            snprintf(why, sizeof why, "it returns a '%s', and '.%s' passes the result "
+                     "back as its first parameter, a '%s'", type_name(ret), member,
+                     type_name(A));
+        if (!why[0] && is_reduce && known_A && call->children[1]) {
+            const Node *in = call->children[1];
+            const Type *it = in->rtype;
+            if (it && it->kind != TY_UNKNOWN && !tk_type_has_unknown(it)
+                && !types_compat(it, A) && !lit_narrows(cx->src, in, A)) {
+                snprintf(why, sizeof why, "the initial value is a '%s', and '.%s' "
+                         "passes it as the function's first parameter, a '%s'",
+                         type_name(it), member, type_name(A));
+                at_node = in;
+            }
+        }
+    }
+    if (!why[0]) return;
+    if (!tc_first_report(cx, at_node) || !tc_can_emit(cx)) return;
+    char got[256], msg[768];
+    snprintf(got, sizeof got, "%s", at_node == fa ? type_name(sig) : type_name(at_node->rtype));
+    snprintf(msg, sizeof msg,
+             "type mismatch: the function value passed to '.%s' on a '%s' must be "
+             "'%s', but %s", member, type_name(rt), exp, why);
+    /* No `fix` (AGENTS.md §6). */
+    diag_emit(DIAG_ERROR, E4031, at_node->start, at_node->line, at_node->col, msg,
+              "expected", at_node == fa ? exp : type_name(A), "got", got,
+              (const char *)NULL);
+}
+
 static void check_recv_method_call(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1) return;
     const Node *callee = call->children[0];
@@ -6172,7 +6277,11 @@ static void check_recv_method_call(Ctx *cx, const Node *call) {
     int want = recv_method_arity(member);
     if (want < 0) return;                 /* no established arity */
     int actual = call->child_count;       /* the receiver is argument 1 */
-    if (actual == want) return;
+    if (actual == want) {
+        /* 127.552: and the function value a combinator calls */
+        check_combinator_fn_sig(cx, call, member, recv_value_type(cx, recv));
+        return;
+    }
     if (!tc_first_report(cx, call) || !tc_can_emit(cx)) return;
     recv_arity_error(call, member, want, actual, note);
 }
