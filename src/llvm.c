@@ -3703,6 +3703,7 @@ static int json_arr_shape(Ctx *c, const Node *n, int *kind_out) {
         if (st && st[0] == '@') {
             if (!strcmp(st, "@str")) *kind_out = 1;
             else if (!strcmp(st, "@f64")) *kind_out = 2;
+            else if (!strcmp(st, "@bool")) *kind_out = 3;   /* 127.550 */
             return 1;  /* the backend tag records one level only */
         }
     }
@@ -9689,19 +9690,24 @@ static const char *expr_struct_type_legacy(Ctx *c, const Node *n) {
                      * one combinator that can change the element type. Untagged,
                      * `j.enc(xs.map(&dbl))` had no shape and encoded the handle
                      * as a number. */
+                    /* 127.550: the checker's rtype (recv_map_result_type)
+                     * answers first in expr_struct_type; this is the fallback
+                     * for a receiver it does not establish.  The signature is
+                     * looked up by the SYMBOL the reference names
+                     * (fvc_ref_sig mangles `dbl` to `<module>_dbl`): the bare
+                     * name never matched, so every map was tagged @i64. */
                     if (!strcmp(method, "map") && recv_is_array(c, recv)) {
                         if (n->child_count >= 2 &&
                             n->children[1]->kind == NODE_FUNC_REF) {
-                            char mfn[NAME_BUF];
-                            tok_cp(c->src, n->children[1], mfn, sizeof mfn);
-                            const char *mp = mfn;
-                            while (*mp == '&') mp++;
-                            const FnSig *msig = lookup_fn(c, mp);
+                            const FnSig *msig = fvc_ref_sig(c, n->children[1]);
                             if (msig && msig->ret_type_name[0]) {
-                                if (!strcmp(msig->ret_type_name, "str") ||
-                                    !strcmp(msig->ret_type_name, "$str")) return "@str";
-                                if (strstr(msig->ret_type_name, "f64") ||
-                                    strstr(msig->ret_type_name, "f32")) return "@f64";
+                                const char *rn = msig->ret_type_name;
+                                if (rn[0] == '$') rn++;
+                                if (!strcmp(rn, "str")) return "@str";
+                                if (!strcmp(rn, "f64") || !strcmp(rn, "f32")) return "@f64";
+                                if (!strcmp(rn, "bool")) return "@bool";
+                                const StructInfo *rsi = lookup_struct(c, rn);
+                                if (rsi) return array_struct_tag(rsi->name);
                                 return "@i64";
                             }
                         }
