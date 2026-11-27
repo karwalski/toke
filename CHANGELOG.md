@@ -272,6 +272,17 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   nightly. The unit is kept as
   `test/fuzz/corpus-adversarial/yaml_nightly_oom_unit_127555.bin`.
   `yaml.c` is unchanged.
+- **The nightly's `fuzz-toon` run frees its results too** (127.556). The
+  harness had the same leak: every `toon_from_json` / `toon_to_json` result
+  stayed allocated, and the nightly's `crash-toon-oom-a09c1372` (1,462
+  bytes, about 10 MB replayed alone) was the input running when memory
+  crossed the limit. This is not the fields x rows amplification tracked as
+  127.546, which needs one input of about 64 KiB. `toon_dec` owns nothing,
+  so only the converters' results are freed. The unit is kept as
+  `test/fuzz/corpus-adversarial/toon_nightly_oom_unit_127556.bin`. With
+  that fixed, all 13 fuzz harnesses replay with no leaks under both engines,
+  so `FUZZ_LEAK_TARGETS` now defaults to every target. `toon.c` is
+  unchanged.
 - **`yaml.fromjson` always returns** (127.542, a denial of service). A 35-byte
   malformed flow mapping found by the security nightly's libFuzzer run
   (`crash-yaml-oom-bcd1502b`: libFuzzer died at a 2 GiB malloc; the standalone
