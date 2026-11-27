@@ -384,7 +384,7 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
 ### Build and CI gates
 
 - **C663 and C850 no longer fail because the host is busy** (127.558). At load
-  averages of 60-250, C850 failed 4 of 17 runs because a compile ran past its 20 s
+  averages of 60-250, 4 of C850's 17 checks failed because a compile ran past its 20 s
   alarm and left no binary. C663 failed with "largest delay 400" because 3 s of
   crashing was not always enough to drive a slot's streak to the cap. C663 now
   checks the backoff schedule the supervisor logs: every line must be

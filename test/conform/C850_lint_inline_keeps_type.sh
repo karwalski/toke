@@ -31,7 +31,7 @@
 #
 # Load (127.558): the four builds (2b/2c, 10) ran under a 20 s alarm, so on
 # a host at load 60-250 a compile that was merely slow was killed, its binary
-# was missing and the case failed as "rc=127" -- 4/17 runs on one tree.  A
+# was missing and its checks failed as "rc=127" (4 of 17 on one tree).  A
 # build now has BUILD_SECS (default 600, TK_CONFORM_BUILD_SECS overrides), which
 # only a hang reaches, and a build that does not produce its binary fails by
 # name -- "timed out after N s" (SIGALRM, rc 142) or "failed rc=N" -- rather
