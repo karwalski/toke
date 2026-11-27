@@ -215,6 +215,23 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   calls through a function value in toke (`let g=&f; g(x)`) are unchanged.
   A sort comparator that itself sorts no longer replaces the outer sort's
   comparator. Tests: C2295–C2299, `test/standalone/test_127_548.tk`.
+- **`xs.map(f)` is an array of `f`'s return type** (127.550). After 127.548
+  `@(1.5;2.5).map(&dbl)` stored the right doubles, but the result was still
+  typed `@i64`: `j.enc(..)` printed `[4613937818241073152,...]` and
+  `"\(ds.get(0))"` printed the bit pattern. A `str` map encoded its string
+  pointers as numbers, a record map encoded addresses, and a `bool` map
+  encoded and interpolated `0`/`1`. The checker now types `.map` on a known
+  array as `@(R)`, where `R` is the declared return of the function value:
+  `&f`, a closure with a declared return, a `let g=&f` value or a function
+  parameter. The emitter's fallback tag, used for a receiver the checker does
+  not type (a record field, a reassigned `mut`), now finds the function by its
+  module-qualified symbol. Before, it looked up the bare name, never found it,
+  and answered `@i64`. Two consequences can change a program. A `bool` map
+  now encodes as `[false,true]` (127.548's tests recorded `[0,1]`). A
+  mismatched use of the result is now E4031, for example
+  `let a:@i64=fs.map(&dbl)` or `let s:str=fs.map(&dbl).get(0)`. A closure with
+  no declared return and a fallible function are left untyped, as before.
+  Tests: C2300–C2304, `test/standalone/test_127_550.tk`.
 
 ### Security fixes
 
