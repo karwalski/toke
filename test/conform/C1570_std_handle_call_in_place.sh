@@ -22,13 +22,13 @@
 # Negative control: TKC built from fix/z176-std-record-in-place (6d270505) --
 # cases 1-10 and 14 red; 11-13, 15, 16 green.
 #
-# Story: 127.392
+# Story: 127.392, 127.559
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/toke}"
-RUN="${REPO_ROOT}/test/run_test.sh"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
 PASS=0; FAIL=0
 expect() {
@@ -107,8 +107,8 @@ io.println("\(s.done(b)) \(vec.len(vec.push(vec.push(vec.new();1);2))) \(vec.get
 <0};
 EOF
 rm -f "${WORK}/r13.bin"
-( cd "${WORK}" && "${RUN}" 60 "${TKC}" r13.tk -o r13.bin >/dev/null 2>&1 )
-r13="$([ -x "${WORK}/r13.bin" ] && "${RUN}" 20 "${WORK}/r13.bin" 2>&1 | tr '\n' ' ')"
+( cd "${WORK}" && tk_build "${TKC}" r13.tk -o r13.bin >/dev/null 2>&1 ) || tk_build_failed $?
+r13="$([ -x "${WORK}/r13.bin" ] && tk_run "${WORK}/r13.bin" 2>&1 | tr '\n' ' ')"
 expect "13 well-typed in-place handles run" "${r13}" "ab 2 9 1 1 1 6 true true "
 
 # 14: j.enc of an in-place handle is refused as the bound form is, where it
@@ -116,7 +116,8 @@ expect "13 well-typed in-place handles run" "${r13}" "ab 2 9 1 1 1 6 true true "
 # opaque handle); since 127.402 the checker reports it first as E4031.
 jb() {
     printf 'm=c1570j;\ni=vec:std.vec;\ni=io:std.io;\ni=j:std.json;\nf=main():i64{\n%s\n<0};\n' "$2" > "${WORK}/$1.tk"
-    local out; out="$(cd "${WORK}" && "${RUN}" 60 "${TKC}" "$1.tk" -o "$1.bin" 2>&1)"
+    local out rc; out="$(cd "${WORK}" && tk_build "${TKC}" "$1.tk" -o "$1.bin" 2>&1)"; rc=$?
+    [ "${rc}" -eq 142 ] && { tk_build_failed 142; return; }
     printf '%s\n' "${out}" | grep -o '"error_code":"E[0-9]*"' | sed 's/.*"\(E[0-9]*\)"/\1/' | sort -u | tr '\n' ' '
 }
 expect "14 j.enc in place refused as bound" \

@@ -395,6 +395,27 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   (`TK_CONFORM_BUILD_SECS`), and a build that times out is reported by name.
   No C code changed.
 
+- **The rest of the timing-sensitive conformance scripts no longer fail on a busy host**
+  (127.559). C1860, C1861 and C2287 put an upper bound on elapsed time for a
+  feature that is itself a time limit. Load only makes a run slower, so a
+  correct limit failed under load, and the bound added nothing that a
+  load-free check could not prove. C1860 now proves the deadline fired from
+  the client's own message and from how many body bytes it read: no more
+  than 2 of the 6-byte drip, where byte k is sent no sooner than 400k ms
+  after the request. That check catches a deadline that fires 600 ms late,
+  which the old 1900 ms bound let through. In C1861 the chunked-size-line
+  server now holds the connection open instead of closing it after 5 s. A
+  client that does not refuse on the size line then waits out its 30 s
+  per-read timeout. In C2287 the driver's own `TIMEOUT after 1 s` line with
+  exit 70 is the proof that its limit fired. Builds in 16 places, run under
+  a 60 s alarm in C1420-C1620 and M002, now go through
+  `TK_CONFORM_BUILD_SECS`. The 5-20 s alarms on quick programs and on
+  `tkc --check/--lint/--min` in C002-C005, C048, C585, C1850, C1881, C2285,
+  C2286, C2290, M001 and M002 become a 120 s hang guard
+  (`TK_CONFORM_RUN_SECS`). A guard that fires reports rc 142 by name. Both
+  settings live in `test/conform_timing.sh`, a small file the scripts
+  source. No C code changed.
+
 - **`make fuzz-smoke` fails on an input that never returns, instead of hanging**
   (127.545). Each replayed input now has `FUZZ_REPLAY_TIMEOUT` seconds (default 25,
   `0` turns it off): the standalone driver arms an alarm per input and exits 70 with

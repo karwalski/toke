@@ -25,10 +25,11 @@
 # src/stdlib.  The base eca5062f and the v3.2.0 tree abort with ASan's
 # heap-buffer-overflow on the first truncated literal.
 #
-# Story: 127.544
+# Story: 127.544, 127.559
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 S="${C2286_STDLIB:-${REPO_ROOT}/src/stdlib}"
 CC="${CC:-cc}"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkc_c2286_XXXXXX")"
@@ -71,10 +72,10 @@ if ! "${CC}" -fsanitize=address,undefined -fno-sanitize-recover=all \
         > cc.log 2>&1; then
     echo "  FAIL: build"; head -8 cc.log | sed 's/^/        /'; exit 1
 fi
-ASAN_OPTIONS=detect_leaks=0 perl -e 'alarm 20; exec @ARGV' ./t > out.log 2>&1
+ASAN_OPTIONS=detect_leaks=0 tk_run ./t > out.log 2>&1
 rc=$?
 grep -E '^  (PASS|FAIL)' out.log
 grep -m1 'ERROR: AddressSanitizer' out.log | sed 's/^/        /'
 echo "-----------------------------------------------------------------------"
 if [ "${rc}" -eq 0 ]; then echo "C2286: passed"; exit 0; fi
-echo "C2286: FAILED (exit ${rc})"; exit 1
+echo "C2286: FAILED (exit $(tk_rc "${rc}"))"; exit 1

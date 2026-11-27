@@ -17,13 +17,13 @@
 # Negative control: TKC built from fix/z166-imported-fn-types (4ef15404) --
 # cases 1-6, 8-10 and 13 red; 7, 11, 12 green on both.
 #
-# Story: 127.379
+# Story: 127.379, 127.559
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/toke}"
-RUN="${REPO_ROOT}/test/run_test.sh"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
 PASS=0; FAIL=0
 expect() {
@@ -41,8 +41,8 @@ f=mkadd(n:i64):(i64):i64{<fn(x:i64):i64{<x+n}};'
 run() {
     printf 'm=c1461;\n%s\nf=main():i64{\nlet t=@("i":inc;"d":dbl);\n%s\n<0};\n' "${HEAD}" "$2" > "${WORK}/$1.tk"
     rm -f "${WORK}/$1.bin"
-    ( cd "${WORK}" && "${RUN}" 60 "${TKC}" "$1.tk" -o "$1.bin" >/dev/null 2>&1 )
-    if [ -x "${WORK}/$1.bin" ]; then "${RUN}" 20 "${WORK}/$1.bin" 2>&1 | tr '\n' ' '; echo "rc=${PIPESTATUS[0]}"
+    ( cd "${WORK}" && tk_build "${TKC}" "$1.tk" -o "$1.bin" >/dev/null 2>&1 ) || tk_build_failed $?
+    if [ -x "${WORK}/$1.bin" ]; then tk_run "${WORK}/$1.bin" 2>&1 | tr '\n' ' '; echo "rc=${PIPESTATUS[0]}"
     else echo "no binary"; fi
 }
 # chk NAME BODY -- --check BODY as main; print the error codes and rc
@@ -94,8 +94,8 @@ f=sq(x:i64):i64{<x*x};
 f=main():i64{let t=l.tbl(); let f=t.getor("d";sq); let g=t.getor("z";sq); io.println("\(f(4)) \(g(4))");<0};
 EOF2
 rm -f "${WORK}/r13.bin"
-( cd "${WORK}" && "${RUN}" 60 "${TKC}" a_lib.tk r13.tk -o r13.bin >/dev/null 2>&1 )
-r13="$([ -x "${WORK}/r13.bin" ] && "${RUN}" 20 "${WORK}/r13.bin" 2>&1 | tr '\n' ' ')"
+( cd "${WORK}" && tk_build "${TKC}" a_lib.tk r13.tk -o r13.bin >/dev/null 2>&1 ) || tk_build_failed $?
+r13="$([ -x "${WORK}/r13.bin" ] && tk_run "${WORK}/r13.bin" 2>&1 | tr '\n' ' ')"
 expect "13 imported map of functions" "${r13}" "8 16 "
 
 echo "C1461: ${PASS} passed, ${FAIL} failed"

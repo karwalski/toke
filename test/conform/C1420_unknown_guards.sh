@@ -34,13 +34,13 @@
 # case 1 red (E4031: the guard never fired); cases 2-9 green on both; case 10
 # (as updated by 127.375) red on any build without arm_types_agree (rc=0).
 #
-# Story: 127.374
+# Story: 127.374, 127.559
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/toke}"
-RUN="${REPO_ROOT}/test/run_test.sh"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
 PASS=0; FAIL=0
 expect() {
@@ -98,8 +98,8 @@ chk() {
 }
 run() {
     printf '%s\nf=main():i64{\nlet c=true;\n%s\n<0};\n' "$H" "$1" > "${WORK}/rb.tk"
-    "${RUN}" 60 "${TKC}" "${WORK}/rb.tk" -o "${WORK}/rb" >/dev/null 2>&1 || { echo build-failed; return; }
-    "${RUN}" 20 "${WORK}/rb" 2>&1 | tr '\n' ' '
+    tk_build "${TKC}" "${WORK}/rb.tk" -o "${WORK}/rb" >/dev/null 2>&1 || { tk_build_failed $?; return; }
+    tk_run "${WORK}/rb" 2>&1 | tr '\n' ' '
 }
 MK='let d=mt r(1) {$ok:v @("k":s.bytes("ab")); $err:e <1};'
 MA='let d=mt r(1) {$ok:v @(s.bytes("ab")); $err:e <1};'

@@ -15,7 +15,8 @@
 # stray byte is dropped like any other non-object element (the documented
 # lenient reading) and the conversion is linear in the input.
 #
-# WHAT THIS DRIVES (a toke program, each run under a 5 s wall-clock alarm):
+# WHAT THIS DRIVES (a toke program, each run under tk_run's hang guard,
+# TK_CONFORM_RUN_SECS; 127.559):
 #   - the fuzz artifact through toon.fromjson, toon.tojson of the result,
 #     and toon.tojson / toon.dec of the raw input: returns, exact output;
 #   - `[{"a":1}}`: one row;  `[{"a":1}},{"a":2}]`: the stray '}' is skipped
@@ -26,10 +27,11 @@
 # all four inputs; C2290_STDLIB=<dir> exports TKC_STDLIB_DIR=<dir> for a
 # compiler built from another tree.
 #
-# Story: 127.543
+# Story: 127.543, 127.559
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 [ -n "${C2290_STDLIB:-}" ] && export TKC_STDLIB_DIR="${C2290_STDLIB}"
 ART="${REPO_ROOT}/test/fuzz/corpus-adversarial/toon_from_json_stray_close_127543.json"
@@ -71,9 +73,9 @@ if ! "${TKC}" --allow-all --out p p.tk > p.log 2>&1; then
 else
     # $1 input, $2 label, $3 expected stdout
     run() {
-        got="$(C2290_IN="$1" perl -e 'alarm 5; exec @ARGV' ./p 2>&1)"; rc=$?
+        got="$(C2290_IN="$1" tk_run ./p 2>&1)"; rc=$?
         if [ "${rc}" -eq 142 ]; then
-            fail "$2: did not return within 5 s"
+            fail "$2: did not return: killed by the ${TK_RUN_SECS} s hang guard (rc 142)"
         elif [ "${rc}" -ne 0 ]; then
             fail "$2: exit ${rc}"; printf '%s\n' "${got}" | head -6 | sed 's/^/        /'
         elif [ "${got}" != "$3" ]; then

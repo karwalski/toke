@@ -14,7 +14,7 @@
 #   dictionary word 1.
 #
 # WHAT THIS DRIVES.  (1) a 100000-letter line and a 6000-character
-# placeholder, under a 20 s alarm, must come out byte-identical (neither has
+# placeholder, under a hang guard (TK_CONFORM_RUN_SECS), must come out byte-identical (neither has
 # an abbreviation), with a short word after them still abbreviated; (2) the
 # normal short-line behaviour is unchanged; (3) --decompress of @R1,
 # @R4294967297 and @R18446744073709551617 against a one-word dictionary
@@ -23,12 +23,13 @@
 # Negative control: TKC=<main f605aec9's toke> — case 1 fails (killed by the
 # alarm, rc 142) and case 3 fails ("zebra quux zebra zebra zebra end").
 #
-# Story: 121.28
+# Story: 121.28, 127.559
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 
 PASS=0
@@ -50,13 +51,13 @@ echo "---------------------------------------------------------------"
 # 1. Oversize word and placeholder, under an alarm.
 python3 -c "print('A'*100000); print('\$ABC' + 'D'*6000 + '12 the')" > "${WORK}/big.txt"
 rc=0
-perl -e 'alarm 20; exec @ARGV' "${TKC}" --compress-stream \
+tk_run "${TKC}" --compress-stream \
     <"${WORK}/big.txt" >"${WORK}/big.out" 2>"${WORK}/big.err" || rc=$?
 want="$(python3 -c "print('A'*100000); print('\$ABC' + 'D'*6000 + '12 ~t')")"
 if [ "${rc}" = 0 ] && [ "$(cat "${WORK}/big.out")" = "${want}" ]; then
     pass "100000-letter word and 6000-char placeholder pass through verbatim"
 else
-    fail "oversize tokens: rc ${rc}, $(wc -c <"${WORK}/big.out") bytes out"
+    fail "oversize tokens: rc $(tk_rc "${rc}"), $(wc -c <"${WORK}/big.out") bytes out"
 fi
 
 # 2. Short lines unchanged.

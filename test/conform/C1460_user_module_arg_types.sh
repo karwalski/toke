@@ -33,7 +33,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/toke}"
-RUN="${REPO_ROOT}/test/run_test.sh"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
 PASS=0; FAIL=0
 expect() {
@@ -110,8 +110,8 @@ f=tri(x:i64):i64{<x*3};
 f=main():i64{io.println("\(l.ap(tri;14)) \(l.ps("abc")) \(l.pr(l.mk()))");<0};
 EOF
 rm -f "${WORK}/r20.bin"
-( cd "${WORK}" && "${RUN}" 60 "${TKC}" a_lib.tk r20.tk -o r20.bin >/dev/null 2>&1 )
-r20="$([ -x "${WORK}/r20.bin" ] && "${RUN}" 20 "${WORK}/r20.bin" 2>&1 | tr '\n' ' ')"
+( cd "${WORK}" && tk_build "${TKC}" a_lib.tk r20.tk -o r20.bin >/dev/null 2>&1 ) || tk_build_failed $?
+r20="$([ -x "${WORK}/r20.bin" ] && tk_run "${WORK}/r20.bin" 2>&1 | tr '\n' ' ')"
 expect "20 well-typed imported calls run" "${r20}" "42 3 3 "
 
 # 21: a sum-typed parameter is judged by the same-module rule (127.382)

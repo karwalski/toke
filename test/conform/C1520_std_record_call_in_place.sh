@@ -21,13 +21,13 @@
 # Negative control: TKC built from fix/z172-imported-record-sum-lit
 # (8f261a6f) -- cases 1-10 and 16 red; 11-15, 17, 18 green.
 #
-# Story: 127.386
+# Story: 127.386, 127.559
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/toke}"
-RUN="${REPO_ROOT}/test/run_test.sh"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
 PASS=0; FAIL=0
 expect() {
@@ -99,8 +99,8 @@ io.println("\(time.toparts(90061000).day) \(time.toparts(90061000).hour+1) \(yr(
 <0};
 EOF
 rm -f "${WORK}/r15.bin"
-( cd "${WORK}" && "${RUN}" 60 "${TKC}" r15.tk -o r15.bin >/dev/null 2>&1 )
-r15="$([ -x "${WORK}/r15.bin" ] && "${RUN}" 20 "${WORK}/r15.bin" 2>&1 | tr '\n' ' ')"
+( cd "${WORK}" && tk_build "${TKC}" r15.tk -o r15.bin >/dev/null 2>&1 ) || tk_build_failed $?
+r15="$([ -x "${WORK}/r15.bin" ] && tk_run "${WORK}/r15.bin" 2>&1 | tr '\n' ' ')"
 expect "15 well-typed in-place calls run" "${r15}" "2 2 1970 5000 2 2 "
 
 cat > "${WORK}/r16.tk" <<'EOF'
@@ -115,8 +115,8 @@ io.println(j.enc(time.toparts(90061000)));
 <0};
 EOF
 rm -f "${WORK}/r16.bin"
-( cd "${WORK}" && "${RUN}" 60 "${TKC}" r16.tk -o r16.bin >/dev/null 2>&1 )
-r16="$([ -x "${WORK}/r16.bin" ] && "${RUN}" 20 "${WORK}/r16.bin" 2>&1 | tr '\n' ' ')"
+( cd "${WORK}" && tk_build "${TKC}" r16.tk -o r16.bin >/dev/null 2>&1 ) || tk_build_failed $?
+r16="$([ -x "${WORK}/r16.bin" ] && tk_run "${WORK}/r16.bin" 2>&1 | tr '\n' ' ')"
 J='{"year":1970,"month":1,"day":2,"hour":1,"min":1,"sec":1}'
 expect "16 j.enc of an in-place record encodes it as bound" "${r16}" "${J} ${J} "
 

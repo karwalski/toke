@@ -50,10 +50,11 @@
 # or answers a raw pointer as a handle, real/grow pass; part 2 -- every forged
 # case exits 139, the controls pass.
 #
-# Story: 138.36
+# Story: 138.36, 127.559
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 S="${C1850_STDLIB:-${REPO_ROOT}/src/stdlib}"
 SANCC="${C1850_CC:-clang}"
@@ -147,10 +148,13 @@ static void *spawner(void *arg) {
     for (int i = 0; i < 200; i++) (void)tk_process_wait_w(5 + i);   /* concurrent lookups */
     return NULL;
 }
+#ifndef HANG_SECS
+#define HANG_SECS 120
+#endif
 int main(int argc, char **argv) {
     char *grant[] = {"h", "--allow-run", NULL};
     tk_cap_init(2, grant);
-    alarm(30);
+    alarm(HANG_SECS);   /* 127.559: TK_CONFORM_RUN_SECS, a hang guard */
     const char *c = argc > 1 ? argv[1] : "";
     if (!strcmp(c, "forged-small")) {
         int64_t vs[] = {5, 7, 4096, 1, -1, INT64_MIN, INT64_MAX, 0x7fffffff};
@@ -243,7 +247,7 @@ while IFS= read -r f; do SRCS+=("${S}/${f##*/src/stdlib/}"); done \
     < <("${TKC}" --emit-deps "${WORK}/d.tk" 2>/dev/null | sed '/^---/,$d' | grep '\.c$')
 SAN=(-fsanitize=address,undefined -fno-omit-frame-pointer)
 build_h() {
-    "${SANCC}" -std=c99 -D_GNU_SOURCE -g -O1 -w "$@" -iquote "${S}" -o h h.c "${SRCS[@]}" \
+    tk_build "${SANCC}" -std=c99 -D_GNU_SOURCE -g -O1 -w -DHANG_SECS="${TK_RUN_SECS}" "$@" -iquote "${S}" -o h h.c "${SRCS[@]}" \
         -lpthread -lm -lz > build.log 2>&1
 }
 if [ "${#SRCS[@]}" -eq 0 ]; then
@@ -265,7 +269,7 @@ if [ -x ./h ]; then
         if grep -a -q -E 'Sanitizer|runtime error' "err_${c}"; then
             fail "C ${c}: $(grep -a -m1 -E 'ERROR: AddressSanitizer|runtime error|SUMMARY' "err_${c}" | head -c 200)"
         elif [ "${rc}" -ne 0 ] && ! grep -a -q '^BAD ' "out_${c}"; then
-            fail "C ${c}: harness exited ${rc} after: $(tail -1 "out_${c}" | head -c 160)"
+            fail "C ${c}: harness exited $(tk_rc "${rc}") after: $(tail -1 "out_${c}" | head -c 160)"
         fi
     done
 fi
@@ -286,10 +290,10 @@ prog() {
     if ! "${TKC}" -o "${name}" "${name}.tk" > "${name}.build" 2>&1; then
         fail "toke ${name}: build failed: $(grep -m1 -E 'error' "${name}.build" | head -c 160)"; return
     fi
-    out="$(perl -e 'alarm 20; exec @ARGV' "./${name}" --allow-run 2>&1)"; rc=$?
+    out="$(tk_run "./${name}" --allow-run 2>&1)"; rc=$?
     out="$(printf '%s' "${out}" | tr '\n' ' ' | tr -s ' ' | sed 's/ *$//')"   # stdout carries its own newline
     if [ "${rc}" -eq 0 ] && [ "${out}" = "${want}" ]; then pass "toke ${name}: ${want}"
-    else fail "toke ${name}: exit ${rc}"; echo "        expected: ${want}"; echo "        got:      ${out}"; fi
+    else fail "toke ${name}: exit $(tk_rc "${rc}")"; echo "        expected: ${want}"; echo "        got:      ${out}"; fi
 }
 HDR='i=io:std.io;
 i=process:std.process;'

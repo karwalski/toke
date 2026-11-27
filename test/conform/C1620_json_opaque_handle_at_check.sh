@@ -21,13 +21,13 @@
 # Negative control: TKC built from fix/z181-std-handle-in-place (0d347948) --
 # cases 1-12 and 14-16 red; 13, 17-19 green.
 #
-# Story: 127.402
+# Story: 127.402, 127.559
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/toke}"
-RUN="${REPO_ROOT}/test/run_test.sh"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
 PASS=0; FAIL=0
 expect() {
@@ -58,7 +58,8 @@ codes() {   # codes FILE [--check] -> "E... rc=N"
         out="$(cd "${WORK}" && "${TKC}" --check "$1" 2>&1)"; rc=$?
     else
         rm -f "${WORK}/$1.bin"
-        out="$(cd "${WORK}" && "${RUN}" 60 "${TKC}" "$1" -o "$1.bin" 2>&1)"; rc=$?
+        out="$(cd "${WORK}" && tk_build "${TKC}" "$1" -o "$1.bin" 2>&1)"; rc=$?
+        [ "${rc}" -eq 142 ] && { tk_build_failed 142; return; }
     fi
     echo "$(printf '%s\n' "${out}" | grep -o '"error_code":"E[0-9]*"' | sed 's/.*"\(E[0-9]*\)"/\1/' | sort -u | tr '\n' ' ')rc=${rc}"
 }
@@ -81,8 +82,8 @@ expect "12 j.print of a \$vechandle parameter"     "$(chk n12 'let z=shv(vec.new
 # 13: values read from a handle, and plain records / arrays, are untouched
 src p13 'let v=vec.push(vec.push(vec.new();4);5); j.print(vec.len(v)); j.print($pt{x:vec.get(v;1);y:"q"}); io.println(j.enc(@(1;2)));'
 expect "13a control checks clean" "$(codes p13.tk --check)" "rc=0"
-( cd "${WORK}" && "${RUN}" 60 "${TKC}" p13.tk -o p13.bin >/dev/null 2>&1 )
-r13="$([ -x "${WORK}/p13.bin" ] && "${RUN}" 20 "${WORK}/p13.bin" 2>&1 | tr '\n' ' ')"
+( cd "${WORK}" && tk_build "${TKC}" p13.tk -o p13.bin >/dev/null 2>&1 ) || tk_build_failed $?
+r13="$([ -x "${WORK}/p13.bin" ] && tk_run "${WORK}/p13.bin" 2>&1 | tr '\n' ' ')"
 expect "13b control runs" "${r13}" '2 {"x":5,"y":"q"} [1,2] '
 
 # 14: the BUILD stops at the checker's E4031 and never reports E9002

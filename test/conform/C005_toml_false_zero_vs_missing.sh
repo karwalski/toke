@@ -36,12 +36,13 @@
 # silent, showing up only as an error that stops being reported.  Cases 4 and 5
 # below are that guard.
 #
-# Story: 127.67
+# Story: 127.67, 127.559
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 # The ~/tk/toke/tkc symlink is relinked by any concurrent `make`; $TKC lets a
 # caller pin a resolved binary for the run (131.39).
 TKC="${TKC:-${REPO_ROOT}/tkc}"
@@ -73,14 +74,14 @@ run_case() {
         FAIL=$((FAIL + 1))
         return
     fi
-    out="$(perl -e 'alarm 20; exec @ARGV' ./case_bin 2>&1)" || rc=$?
+    out="$(tk_run ./case_bin 2>&1)" || rc=$?
     if [ "${out}" = "${expected}" ]; then
         echo "  PASS: ${name}"
         PASS=$((PASS + 1))
     else
         echo "  FAIL: ${name}"
         echo "      expected: $(printf '%s' "${expected}" | tr '\n' '|')"
-        echo "      got:      $(printf '%s' "${out}"      | tr '\n' '|') (rc ${rc})"
+        echo "      got:      $(printf '%s' "${out}"      | tr '\n' '|') (rc $(tk_rc "${rc}"))"
         FAIL=$((FAIL + 1))
     fi
 }

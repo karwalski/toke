@@ -11,14 +11,14 @@
 #   4. `tkc --min a.tk b.tk` prints one line per file, in order, does not
 #      fall through to the compile pipeline, and leaves no stray binary.
 #
-# Stories: 131.34, 131.36
+# Stories: 131.34, 131.36, 127.559
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
-RUN="${REPO_ROOT}/test/run_test.sh"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 
 PASS=0
 FAIL=0
@@ -60,10 +60,10 @@ check "raw newline re-emitted as the \\n escape" "1" "$(grep -cF 'name,age\nalic
 # ── 2. round-trip: identical program output ──────────────────────────────────
 "${TKC}" orig.tk --out orig_bin >/dev/null 2>&1
 "${TKC}" min.tk  --out min_bin  >/dev/null 2>&1
-ORIG_OUT="$("${RUN}" 20 ./orig_bin | od -c)"
-MIN_OUT="$("${RUN}" 20 ./min_bin  | od -c)"
+ORIG_OUT="$(tk_run ./orig_bin | od -c)"
+MIN_OUT="$(tk_run ./min_bin  | od -c)"
 check "compiled output byte-identical (orig vs --min)" "${ORIG_OUT}" "${MIN_OUT}"
-check "original prints 10 lines (raw newlines preserved)" "10" "$("${RUN}" 20 ./orig_bin | wc -l | tr -d ' ')"
+check "original prints 10 lines (raw newlines preserved)" "10" "$(tk_run ./orig_bin | wc -l | tr -d ' ')"
 
 # ── 3. idempotent ────────────────────────────────────────────────────────────
 check "min(min(p)) == min(p)" "$(cat min.tk)" "$("${TKC}" --min min.tk)"
@@ -71,7 +71,7 @@ check "min(min(p)) == min(p)" "$(cat min.tk)" "$("${TKC}" --min min.tk)"
 # ── 4. multi-file --min ──────────────────────────────────────────────────────
 printf 'm=a;f=main():i64{<0};\n' > a.tk
 printf 'm=b;\nf=main():i64{\n  <1\n};\n' > b.tk
-MULTI="$("${RUN}" 20 "${TKC}" --min a.tk b.tk </dev/null)"
+MULTI="$(tk_run "${TKC}" --min a.tk b.tk </dev/null)"
 check "multi-file --min prints one line per file, in order" \
       $'m=a;f=main():i64{<0};\nm=b;f=main():i64{<1};' "${MULTI}"
 check "multi-file --min leaves no stray binary" "absent" "$([ -e b ] && echo present || echo absent)"

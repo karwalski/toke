@@ -19,12 +19,13 @@
 # A loopback server (127.0.0.1, a port in 48110-48119) answers by path and
 # logs how many body bytes it managed to send:
 #   1. CL 100, cap 100: $ok 100            2. CL 100, cap 99: $err (Content-Length is 100)
-#   3. CL 64 MiB, cap 1 MiB: $err at once, and the server could not send it all
+#   3. CL 64 MiB, cap 1 MiB: $err, and the server could not send it all
 #   4. no length, 64 MiB then close, cap 1 MiB: $err, server could not send it all
 #   5. chunked 100 (10 x 10), cap 100: $ok 100
 #   6. chunked 100, cap 99: $err (a chunked body of more than 99 bytes)
-#   7. a chunk size line of 0x7fffffff, cap 1000: $err on the size line, at once
-#   8. a 20000-byte chunk extension, cap 100: $err (framing)
+#   7. a chunk size line of 0x7fffffff, cap 1000: $err on the size line, while
+#      the server holds the connection open with nothing more to send
+#   8. a 20000-byte chunk extension, cap 100: $err (framing), likewise
 #   9. no length, 100 bytes then close, cap 100: $ok 100; cap 99: $err
 #  10. 204 with cap 0: $ok (no body); CL 0 with cap 0: $ok 0
 #  11. no cap, CL 8 MiB: $ok 8388608 (the default reads the whole body)
@@ -33,14 +34,31 @@
 # Measured 2026-11-15: against v3.2.0's src/stdlib the client does not link
 # (_tk_http_withmaxbody_w undefined).  With the cap never applied in
 # client_do_request: 6 passed, 7 failed -- 2, 3, 4, 6 and 9b answer $ok with
-# the whole body (3 and 4 read all 67108864 bytes), 7 and 8 wait 5 s for the
-# server to close and answer "incomplete response".
+# the whole body (3 and 4 read all 67108864 bytes), 7 and 8 wait out the
+# 30 s per-read timeout on the held connection and answer "incomplete
+# response: receive timed out ..." (re-measured 2026-11-28, 127.559; before
+# the hold they waited 5 s for the server to close).
 #
-# Story: 138.24
+# Timing (127.559).  3, 7 and 8 used to require the answer in under 3000 ms,
+# which a loaded host broke and which proved nothing the result does not.  3:
+# the message quotes the Content-Length, so it was refused on the header, and
+# the server could not send all 64 MiB.  7 and 8: the server used to close 5 s
+# after the size line, so "at once" was told from "waited for the close" by
+# the clock.  Now it sends the size line and then holds the connection open,
+# sending nothing, until the client closes it (60 s guard): a client that does
+# not decide on the size line has nothing more to read and waits out its
+# 30000 ms per-read timeout, which answers a different $err and takes longer
+# than SEPARATE_MS (15000).  That bound is a separation from the per-read
+# timeout, not a margin for scheduling, so it does not scale.  Every program
+# run is under tk_run's hang guard (TK_CONFORM_RUN_SECS), the build under
+# tk_build's (TK_CONFORM_BUILD_SECS).
+#
+# Story: 138.24, 127.559
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 export TKC_STDLIB_DIR="${C1861_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 PASS=0; FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
@@ -77,6 +95,17 @@ def stream(c, total):
     except OSError:
         pass
     return sent
+def hold(c, path):
+    # 127.559: send nothing more; wait for the client to close (60 s guard).
+    c.settimeout(60)
+    how = "client-closed"
+    try:
+        while c.recv(4096): pass
+    except socket.timeout:
+        how = "server-timeout"
+    except OSError:
+        pass
+    with open(LOG, "a") as f: f.write("%s held %s\n" % (path, how))
 def serve(c):
     sent = -1
     try:
@@ -100,9 +129,9 @@ def serve(c):
             for _ in range(10): c.sendall(b"a\r\n" + b"b" * 10 + b"\r\n")
             c.sendall(b"0\r\n\r\n")
         elif path == "/chhuge":
-            c.sendall(head(b"Transfer-Encoding: chunked\r\n") + b"7fffffff\r\nxyz"); time.sleep(5)
+            c.sendall(head(b"Transfer-Encoding: chunked\r\n") + b"7fffffff\r\nxyz"); hold(c, path)
         elif path == "/chext":
-            c.sendall(head(b"Transfer-Encoding: chunked\r\n") + b"1;" + b"e" * 20000); time.sleep(5)
+            c.sendall(head(b"Transfer-Encoding: chunked\r\n") + b"1;" + b"e" * 20000); hold(c, path)
         elif path == "/close100": c.sendall(head(b"") + b"c" * 100)
         with open(LOG, "a") as f: f.write("%s %d\n" % (path, sent))
     except OSError:
@@ -141,12 +170,13 @@ f=main():i64{
   <0
 };
 TOKE
-if ! "${TKC}" --allow-all --out cl_bin cl.tk > cl.build 2>&1; then
+if ! tk_build "${TKC}" --allow-all --out cl_bin cl.tk > cl.build 2>&1; then
     fail "cl.tk does not build: $(grep -v W1001 cl.build | head -c 400)"
     echo ""; echo "C1861: ${PASS} passed, ${FAIL} failed"; exit 1
 fi
 U="http://127.0.0.1:${P}"
-run() { ./cl_bin "$@" > out 2>&1; R="$(sed -n 1p out)"; MS="$(sed -n 2p out)"; }
+run() { tk_run ./cl_bin "$@" > out 2>&1; R="$(sed -n 1p out)"; MS="$(sed -n 2p out)"; }
+SEPARATE_MS=15000   # see "Timing": half the client's 30000 ms per-read timeout
 expect() { if [ "${R}" = "$2" ]; then pass "$1: '${R}'"; else fail "$1: got '${R}', want '$2'"; fi; }
 sent() { for _ in $(seq 1 50); do grep -q "^$1 " srv.log 2>/dev/null && break; sleep 0.1; done
          grep "^$1 " srv.log | tail -1 | cut -d' ' -f2; }
@@ -157,7 +187,7 @@ run "${U}" /cl100 99;  expect "2 CL 100, cap 99" "err response body exceeds the 
 run "${U}" /big 1048576
 S="$(sent /big)"
 if [ "${R}" = "err response body exceeds the cap (1048576 bytes): Content-Length is 67108864" ] \
-   && [ -n "${S}" ] && [ "${S}" -lt 67108864 ] && [ "${MS:-9999}" -lt 3000 ]; then
+   && [ -n "${S}" ] && [ "${S}" -lt 67108864 ]; then
     pass "3 CL 64 MiB, cap 1 MiB: '${R}' in ${MS} ms; the server sent ${S} of 67108864 bytes"
 else fail "3 /big: '${R}' (${MS} ms), server sent '${S}'"; fi
 
@@ -172,14 +202,14 @@ run "${U}" /ch100 100; expect "5 chunked 100, cap 100" "ok 200 100"
 run "${U}" /ch100 99;  expect "6 chunked 100, cap 99" "err response body exceeds the cap (99 bytes): a chunked body of more than 99 bytes"
 
 run "${U}" /chhuge 1000
-if [ "${R}" = "err response body exceeds the cap (1000 bytes): a chunked body of more than 1000 bytes" ] && [ "${MS:-9999}" -lt 3000 ]; then
-    pass "7 a 0x7fffffff chunk, cap 1000: refused on its size line (${MS} ms)"
-else fail "7 /chhuge: '${R}' (${MS} ms)"; fi
+if [ "${R}" = "err response body exceeds the cap (1000 bytes): a chunked body of more than 1000 bytes" ] && [ "${MS:-99999}" -lt "${SEPARATE_MS}" ]; then
+    pass "7 a 0x7fffffff chunk, cap 1000: refused on its size line, the server still holding (${MS} ms)"
+else fail "7 /chhuge: '${R}' (${MS} ms; want < ${SEPARATE_MS})"; fi
 
 run "${U}" /chext 100
-if [ "${R}" = "err response body exceeds the cap (100 bytes): a chunk size line or trailer of more than 8192 bytes" ] && [ "${MS:-9999}" -lt 3000 ]; then
-    pass "8 a 20000-byte chunk extension, cap 100: \$err (${MS} ms)"
-else fail "8 /chext: '${R}' (${MS} ms)"; fi
+if [ "${R}" = "err response body exceeds the cap (100 bytes): a chunk size line or trailer of more than 8192 bytes" ] && [ "${MS:-99999}" -lt "${SEPARATE_MS}" ]; then
+    pass "8 a 20000-byte chunk extension, cap 100: \$err, the server still holding (${MS} ms)"
+else fail "8 /chext: '${R}' (${MS} ms; want < ${SEPARATE_MS})"; fi
 
 run "${U}" /close100 100; expect "9a no length, 100 bytes, cap 100" "ok 200 100"
 run "${U}" /close100 99;  expect "9b no length, 100 bytes, cap 99" "err response body exceeds the cap (99 bytes): more than 99 bytes before the connection closed"
