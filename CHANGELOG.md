@@ -233,6 +233,21 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   `let a:@i64=fs.map(&dbl)` or `let s:str=fs.map(&dbl).get(0)`. A closure with
   no declared return and a fallible function are left untyped, as before.
   Tests: C2300–C2304, `test/standalone/test_127_550.tk`.
+- **`xs.reduce(init;f)` and `xs.fold(init;f)` are `f`'s return type**
+  (127.551). After 127.548 `@(1.5;2.5;0.25).reduce(0.0;&add)` computed 4.25,
+  but the checker did not model `.reduce` / `.fold` (127.550 added only
+  `.map`), so the result was untyped and the emitter read it as an integer:
+  `"\(fs.reduce(0.0;&add))"` and a `let` copy printed `4616471093031469056`,
+  `j.enc` encoded the same number and `==4.25` was false. A `bool`
+  accumulator interpolated and encoded as `1`/`0`, and a `str` or record
+  accumulator encoded its pointer. The checker now types the call on a known
+  array as the declared return of the two-parameter function value (`&f`, a
+  closure with a declared return, a `let g=&f` value or a function
+  parameter), and the emitter reads an `f64` result back as a double and a
+  `bool` result as a bool. A mismatched use of the result is now E4031, for
+  example `let a:i64=fs.reduce(0.0;&add)`. An `i64` reduce is unchanged; a
+  closure with no declared return and a fallible function are left untyped.
+  Tests: C2310–C2312, `test/standalone/test_127_551.tk`.
 - **`task.spawn` and the `spawn` keyword run any function value correctly,
   on every target** (127.549, the 127.548 defect in std.task). task.c called
   the value it was handed as `int64_t f(void)`: a `bool` task's
