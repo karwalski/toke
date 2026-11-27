@@ -401,6 +401,19 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   for llguidance and XGrammar). `docs/spec/toke-lexeme.lark` and `toke-xgr.gbnf` had
   no dead rules and are byte-identical. `scripts/grammar_mutation.py` gains
   `dead_rules(text, dialect)`, the reachability its mutation pass already used.
+- **`toke.gbnf` accepts reading a field named `fn`** (131.152). A record may declare
+  a field `fn` (`t=$p{fn:i64}`, the literal `$p{fn:1}`), and `tkc` parses `x.fn`,
+  `x.fn(1)`, `x.0.fn` and `h().fn` as field reads, but the grammar's member name
+  after `.` was `vname`, which excludes `fn`, so a constrained decoder could never
+  emit a read of such a field. The member name is now `ident` (`tlg-d`); `fn` as a
+  plain name with a postfix (`fn.x`) stays a KNOWN under-approximation, and
+  `x.fn(a:i64):i64{..}` and `x.fn=1` stay rejected by both. Regenerated
+  `docs/spec/toke.lark`, `toke-lexeme.lark` and `toke-xgr.gbnf` (one line each).
+  New seed `test/gbnf/extra/x95.tk` (field reads in let, call, index chains, comments
+  around `.`, cast, propagate, `if`/`lp` conditions, unary operands, a struct literal
+  receiver and a `mt` subject); `test/gbnf/fragments.json` 2541 -> 2549. Against the
+  previous `toke.gbnf` the seed is a parser-only accept and the gate fails. Production
+  and nonterminal counts unchanged (339 / 658).
 
 - **`make fuzz-smoke` replays its inputs under libFuzzer** (127.480). It passed
   libFuzzer a seed directory plus adversarial files, a mix libFuzzer refuses
