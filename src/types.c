@@ -6733,7 +6733,8 @@ static const Type *recv_value_type(Ctx *cx, const Node *recv) {
  *   str .split / .chars / .fields -> @str (std.str `split(..):@$str`;
  *       tk_str_chars_w / tk_str_fields_w build arrays of strings; the
  *       emitter's "@str" list).
- * `.map` needs its argument, so recv_map_result_type (127.550) answers it.
+ * `.map` needs its argument, so recv_map_result_type (127.550) answers it;
+ * `.reduce` / `.fold` likewise, recv_reduce_result_type (127.551).
  */
 static Type *recv_result_on(Ctx *cx, const Type *rt, const char *member) {
     if (!rt || !member) return NULL;
@@ -6805,6 +6806,30 @@ static Type *recv_map_result_type(Ctx *cx, const Type *rt, const Node *call) {
     at->elem = ret;
     return at;
 }
+/*
+ * recv_reduce_result_type (127.551) -- `xs.reduce(init;f)` / `xs.fold(init;f)`
+ * on an ESTABLISHED array is f's declared RETURN type, or NULL when that is
+ * not known.
+ *
+ * Unmodelled, `@(1.5;2.5;0.25).reduce(0.0;&add)` with add:(f64;f64):f64 had
+ * no type, and the emitter's i64 default interpolated and encoded the
+ * accumulator 127.548's adapter computed as its bit pattern
+ * (4616471093031469056 for 4.25).  The function value is read exactly as
+ * recv_map_fn_sig reads it for `.map`; only a two-parameter (accumulator;
+ * element) signature whose return is fully known, not void and not an error
+ * union is modelled -- tk_arr_reduce threads the accumulator through the
+ * adapter's widened slot, so the result is that return.  Anything else
+ * (an untyped closure, a parameter of unknown signature) is left as it was.
+ */
+static Type *recv_reduce_result_type(Ctx *cx, const Type *rt, const Node *call) {
+    if (!rt || rt->kind != TY_ARRAY || !call || call->child_count != 3) return NULL;
+    Type *sig = recv_map_fn_sig(cx, call->children[2]);
+    if (!sig || sig->field_count != 2) return NULL;
+    Type *ret = sig->elem;
+    if (!ret || ret->kind == TY_VOID || ret->kind == TY_ERROR_TYPE
+        || tk_type_has_unknown(ret)) return NULL;
+    return ret;
+}
 
 /*
  * recv_method_result_type (127.364) — the type of a receiver-method call's
@@ -6844,6 +6869,8 @@ static Type *recv_method_result_type(Ctx *cx, const Node *call) {
     const Type *rt = recv_value_type(cx, recv);
     if (!rt) return NULL;
     if (strcmp(member, "map") == 0) return recv_map_result_type(cx, rt, call);
+    if (strcmp(member, "reduce") == 0 || strcmp(member, "fold") == 0)
+        return recv_reduce_result_type(cx, rt, call);   /* 127.551 */
     return recv_result_on(cx, rt, member);
 }
 
