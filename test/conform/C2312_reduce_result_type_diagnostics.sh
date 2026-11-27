@@ -13,7 +13,8 @@
 #      `let g=&f` value); a bool annotation on a `let` copy; a str
 #      annotation on a bool reduce;
 #   2. clean: a matching f64 annotation, a closure with no declared return
-#      (unmodelled), a fallible callee (unmodelled);
+#      (unmodelled); a fallible callee is unmodelled, and since 127.552 the
+#      call itself is E4031 (C2314);
 #   3. E4026 arity on `.reduce` / `.fold` unchanged.
 #
 # Negative control: main 12cc40a3 reports nothing for the cases in 1.
@@ -73,7 +74,9 @@ check "bool annotation on a let copy"   'let a=fs.reduce(0.0;&add); let b:bool=a
 check "str annotation on bool reduce"   'let a:str=@(true).reduce(false;&bo);'                'E4031|str|bool'
 check "f64 annotation clean"            'let a:f64=fs.reduce(0.0;&add);'                      'clean'
 check "undeclared closure return clean" 'let a:i64=fs.reduce(0.0;fn(x:f64;y:f64){<x+y});'     'clean'
-check "fallible callee unmodelled"      'let a=fs.reduce(0.0;&bad);'                          'clean'
+# 127.552: the result stays unmodelled, but the call is now judged: a
+# fallible function cannot be an accumulator (C2314).
+check "fallible callee: 127.552 E4031"   'let a=fs.reduce(0.0;&bad);'                          'E4031|(f64;f64):f64|(f64;f64):f64!$e'
 check "E4026 arity (1) unchanged"       'let a=fs.reduce(0.0);'                               'E4026|-|-'
 check "E4026 arity (3) unchanged"       'let a=fs.fold(0.0;&add;1);'                          'E4026|-|-'
 
