@@ -3,7 +3,7 @@
 # reference a task owns exactly once, after the function has run, and on
 # every path that never runs it (story 127.549).
 #
-# The compiler hands tk_task_spawnfv(scope, adapter, value) a function value
+# The compiler hands tk_task_spawn_fv(scope, adapter, value) a function value
 # at +1 (C2307 checks that half).  The runtime must call the adapter with the
 # value and then drop that reference -- never before the call (the
 # environment would be freed under the running closure), never twice, and
@@ -21,7 +21,7 @@
 #   4. the legacy C entry tk_task_spawn(scope, fn) still runs a C function
 #      int64_t (*)(void) and releases nothing.
 #
-# Negative control: main 58bd74e8 does not link (no tk_task_spawnfv).
+# Negative control: main 58bd74e8 does not link (no tk_task_spawn_fv).
 #
 # Story: 127.549
 set -uo pipefail
@@ -83,25 +83,25 @@ static int64_t legacy(void) { return 77; }
 int main(void) {
     int ok = 1;
     int64_t s = tk_task_scope();
-    int64_t h1 = tk_task_spawnfv(s, (int64_t)(intptr_t)adapter, 101);
-    int64_t h2 = tk_task_spawnfv(s, (int64_t)(intptr_t)adapter, 103);
-    int64_t h3 = tk_task_spawnfv(s, (int64_t)(intptr_t)adapter, 105);
+    int64_t h1 = tk_task_spawn_fv(s, (int64_t)(intptr_t)adapter, 101);
+    int64_t h2 = tk_task_spawn_fv(s, (int64_t)(intptr_t)adapter, 103);
+    int64_t h3 = tk_task_spawn_fv(s, (int64_t)(intptr_t)adapter, 105);
     tk_task_awaitall(s);
     printf("1 results %lld %lld %lld\n", (long long)tk_task_result(h1),
            (long long)tk_task_result(h2), (long long)tk_task_result(h3));
     printf("1 released %d %d %d early %d\n", released(101), released(103), released(105), g_early);
 
-    int64_t r1 = tk_task_spawnfv(12345, (int64_t)(intptr_t)adapter, 201);
+    int64_t r1 = tk_task_spawn_fv(12345, (int64_t)(intptr_t)adapter, 201);
     int64_t c = tk_task_scope();
     tk_task_cancel(c);
-    int64_t r2 = tk_task_spawnfv(c, (int64_t)(intptr_t)adapter, 203);
-    int64_t r3 = tk_task_spawnfv(s, 0, 205);
+    int64_t r2 = tk_task_spawn_fv(c, (int64_t)(intptr_t)adapter, 203);
+    int64_t r3 = tk_task_spawn_fv(s, 0, 205);
     int64_t f = tk_task_scope();
     g_gate = 0;
     int full = 0;
     for (int i = 0; i < 256; i++)
-        if (tk_task_spawnfv(f, (int64_t)(intptr_t)gated, 1000 + 2 * i) > 0) full++;
-    int64_t r4 = tk_task_spawnfv(f, (int64_t)(intptr_t)adapter, 207);
+        if (tk_task_spawn_fv(f, (int64_t)(intptr_t)gated, 1000 + 2 * i) > 0) full++;
+    int64_t r4 = tk_task_spawn_fv(f, (int64_t)(intptr_t)adapter, 207);
     printf("2 refused %lld %lld %lld %lld released %d %d %d %d\n",
            (long long)r1, (long long)r2, (long long)r3, (long long)r4,
            released(201), released(203), released(205), released(207));
@@ -115,8 +115,8 @@ int main(void) {
     int64_t g = tk_task_scope();
     g_gate = 0;
     int64_t busy[64]; int nb = 0;
-    for (int i = 0; i < 64; i++) busy[nb++] = tk_task_spawnfv(g, (int64_t)(intptr_t)gated, 3000 + 2 * i);
-    int64_t sk = tk_task_spawnfv(g, (int64_t)(intptr_t)adapter, 301);
+    for (int i = 0; i < 64; i++) busy[nb++] = tk_task_spawn_fv(g, (int64_t)(intptr_t)gated, 3000 + 2 * i);
+    int64_t sk = tk_task_spawn_fv(g, (int64_t)(intptr_t)adapter, 301);
     tk_task_cancel(g);
     __atomic_store_n(&g_gate, 1, __ATOMIC_RELEASE);
     tk_task_awaitall(g);

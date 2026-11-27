@@ -87,9 +87,9 @@ check_ir() {   # $1 = .ll
 import re, sys
 ir = open(sys.argv[1]).read()
 bad = []
-calls = re.findall(r"call i64 @tk_task_spawnfv\(([^)]*)\)", ir)
+calls = re.findall(r"call i64 @tk_task_spawn_fv\(([^)]*)\)", ir)
 if len(calls) != 4:
-    bad.append("expected 4 tk_task_spawnfv calls, found %d" % len(calls))
+    bad.append("expected 4 tk_task_spawn_fv calls, found %d" % len(calls))
 want = {"half": ("double", r"bitcast double %c\w+ to i64"),
         "n32": ("i32", r"sext i32 %c\w+ to i64"),
         "u16v": ("i16", r"zext i16 %c\w+ to i64"),

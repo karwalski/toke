@@ -11,12 +11,12 @@
 # hand-off 127.548 removed from the array combinators.  arm64 happens to
 # clear the register, so this Mac reads the IR for the x86-64 half.
 #
-# THE FIX: task.spawn lowers to tk_task_spawnfv(scope, adapter, value).  The
+# THE FIX: task.spawn lowers to tk_task_spawn_fv(scope, adapter, value).  The
 # adapter, `define internal i64 @__tk_fvc_<key>(i64 %fv)`, is C convention,
 # calls the value as a toke call does (fastcc) and zero-extends the i1.
 #
 # WHAT THIS CHECKS (host IR, and IR for --target x86_64-unknown-linux-gnu):
-#   1. tk_task_spawnfv is declared (i64, i64, i64) and called once with 3
+#   1. tk_task_spawn_fv is declared (i64, i64, i64) and called once with 3
 #      args; the bare tk_task_spawn is never called;
 #   2. its 2nd argument is `ptrtoint i64 (i64)* @__tk_fvc_*`, and its 3rd the
 #      function value `ptrtoint i1 ()* @p_pos`;
@@ -80,17 +80,17 @@ check_ir() {   # $1 = .ll
 import re, sys
 ir = open(sys.argv[1]).read()
 bad = []
-if "declare i64 @tk_task_spawnfv(i64, i64, i64)" not in ir:
-    bad.append("tk_task_spawnfv not declared (i64, i64, i64)")
+if "declare i64 @tk_task_spawn_fv(i64, i64, i64)" not in ir:
+    bad.append("tk_task_spawn_fv not declared (i64, i64, i64)")
 if re.search(r"call i64 @tk_task_spawn\(", ir):
     bad.append("the bare tk_task_spawn is still called")
-calls = re.findall(r"call i64 @tk_task_spawnfv\(([^)]*)\)", ir)
+calls = re.findall(r"call i64 @tk_task_spawn_fv\(([^)]*)\)", ir)
 if len(calls) != 1:
-    bad.append("expected one tk_task_spawnfv call, found %d" % len(calls))
+    bad.append("expected one tk_task_spawn_fv call, found %d" % len(calls))
 else:
     args = [a.strip() for a in calls[0].split(",")]
     if len(args) != 3:
-        bad.append("tk_task_spawnfv called with %d args" % len(args))
+        bad.append("tk_task_spawn_fv called with %d args" % len(args))
     else:
         reg = args[1].split()[-1]
         m = re.search(re.escape(reg) + r" = ptrtoint (.*?) to i64", ir)

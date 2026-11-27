@@ -223,7 +223,7 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   undefined, an `f64` task's result sat in a float register C never read
   (0 on arm64 too), and a closure was called as code (SIGBUS; a closure
   literal did not even build). Compiled code now calls
-  `tk_task_spawnfv(scope, adapter, value)` with the 127.548 C-ABI adapter
+  `tk_task_spawn_fv(scope, adapter, value)` with the 127.548 C-ABI adapter
   (no arguments), and `task.result` is the result widened to `i64`: 0/1 for
   a `bool`, the bits of an `f64` (`math.frombits`), a narrow integer by its
   signedness. A closure task holds a reference to its environment from the

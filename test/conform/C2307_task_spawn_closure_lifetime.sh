@@ -19,7 +19,7 @@
 # checks the runtime half in C.
 #
 # WHAT THIS CHECKS:
-#   1. IR: a closure literal goes to tk_task_spawnfv as the closure box and
+#   1. IR: a closure literal goes to tk_task_spawn_fv as the closure box and
 #      the caller does NOT release it (the task does); a closure-bound local
 #      is retained right before the call;
 #   2. runs: literal, capturing literal, closure-bound local (twice, then
@@ -29,7 +29,7 @@
 #      of each is released by its worker after it ran).
 #
 # Negative control: main 58bd74e8 fails both: the IR has no
-# tk_task_spawnfv, and the program does not build (a closure literal's i8*
+# tk_task_spawn_fv, and the program does not build (a closure literal's i8*
 # went where tk_task_spawn takes an i64: ill-typed IR, E9003).  A program
 # passing closure-bound locals does build there and dies with SIGBUS.
 #
@@ -109,8 +109,8 @@ bad = []
 if not main: bad.append("no tk_main")
 else:
     body = main.group(1)
-    calls = re.findall(r"call i64 @tk_task_spawnfv\(([^)]*)\)", body)
-    if len(calls) != 2: bad.append("expected 2 tk_task_spawnfv calls, found %d" % len(calls))
+    calls = re.findall(r"call i64 @tk_task_spawn_fv\(([^)]*)\)", body)
+    if len(calls) != 2: bad.append("expected 2 tk_task_spawn_fv calls, found %d" % len(calls))
     else:
         lit = calls[0].split(",")[2].strip().split()[-1]
         if not re.search(re.escape(lit) + r" = ptrtoint i8\* %t\d+ to i64", body):
@@ -123,7 +123,7 @@ else:
                 if re.search(r"call void @tk_clos_release\(i64 " + re.escape(rg) + r"\)", body):
                     bad.append("the caller releases the literal it handed to the task")
         loc = calls[1].split(",")[2].strip().split()[-1]
-        pre = body.split("call i64 @tk_task_spawnfv(" + calls[1], 1)[0].rsplit("@tk_task_spawnfv", 1)[-1]
+        pre = body.split("call i64 @tk_task_spawn_fv(" + calls[1], 1)[0].rsplit("@tk_task_spawn_fv", 1)[-1]
         if "call void @tk_clos_retain" not in pre:
             bad.append("the closure-bound local is not retained for the task")
 print("\n".join(bad) if bad else "OK")

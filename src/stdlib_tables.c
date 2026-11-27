@@ -1005,7 +1005,7 @@ const StdlibDecl g_stdlib_decls[] = {
     /* 127.549: what task.spawn / `spawn` lower to -- (scope, C-ABI adapter,
      * function value); tk_task_spawn stays the symbol the checker judges
      * task.spawn's two arguments against */
-    {"tk_task_spawnfv", "declare i64 @tk_task_spawnfv(i64, i64, i64)", 0},
+    {"tk_task_spawn_fv", "declare i64 @tk_task_spawn_fv(i64, i64, i64)", 0},
     {"tk_task_awaitall", "declare i64 @tk_task_awaitall(i64)", 0},
     {"tk_task_result", "declare i64 @tk_task_result(i64)", 0},
     {"tk_task_cancel", "declare i64 @tk_task_cancel(i64)", 0},

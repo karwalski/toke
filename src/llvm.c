@@ -3600,7 +3600,7 @@ static int emit_task_spawn(Ctx *c, int scope_v, const Node *fn_n) {
     int ap = next_tmp(c);
     fprintf(c->out, "  %%t%d = ptrtoint i64 (i64)* @%s to i64\n", ap, asym);
     int t = next_tmp(c);
-    fprintf(c->out, "  %%t%d = call i64 @tk_task_spawnfv(i64 %%t%d, i64 %%t%d, i64 %%t%d)\n",
+    fprintf(c->out, "  %%t%d = call i64 @tk_task_spawn_fv(i64 %%t%d, i64 %%t%d, i64 %%t%d)\n",
             t, scope_v, ap, fv);
     return t;
 }

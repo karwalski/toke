@@ -13,7 +13,7 @@
  *
  * Story: 76.1.1a
  *
- * 127.549: compiled code spawns through tk_task_spawnfv(scope, fn, fv): `fn`
+ * 127.549: compiled code spawns through tk_task_spawn_fv(scope, fn, fv): `fn`
  * is a C-ABI adapter the compiler emits per signature (@__tk_fvc_<key>, the
  * 127.548 machinery, here with no arguments), `fv` the function value.  The
  * task used to be the bare value called as `int64_t (*)(void)`: a bool task's
@@ -284,14 +284,14 @@ static int64_t spawn_task(int64_t scope, int64_t (*fn)(int64_t), int64_t fv)
 
 /* task.spawn(scope:i64; fn:i64):i64 as compiled code calls it (127.549):
  * `fn` the C-ABI adapter, `fv` the function value (+1, owned by the task). */
-int64_t tk_task_spawnfv(int64_t scope, int64_t fn, int64_t fv)
+int64_t tk_task_spawn_fv(int64_t scope, int64_t fn, int64_t fv)
 {
     if (!fn) { tk_clos_release(fv); return -1; }
     return spawn_task(scope, (int64_t (*)(int64_t))(intptr_t)fn, fv);
 }
 
 /* Legacy C entry (tk_task_spawn_w): `fn` a C function int64_t (*)(void).
- * Compiled toke code never calls this; it calls tk_task_spawnfv. */
+ * Compiled toke code never calls this; it calls tk_task_spawn_fv. */
 int64_t tk_task_spawn(int64_t scope, int64_t fn)
 {
     return spawn_task(scope, NULL, fn);

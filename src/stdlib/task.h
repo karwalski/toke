@@ -22,7 +22,7 @@ int64_t tk_task_scope(void);
 /* task.spawn(scope:i64; fn:i64):i64 as compiled code lowers it (127.549):
  * fn is a C-ABI adapter int64_t (*)(int64_t fv), fv the function value; the
  * task owns one reference to fv (a closure) and releases it when done. */
-int64_t tk_task_spawnfv(int64_t scope, int64_t fn, int64_t fv);
+int64_t tk_task_spawn_fv(int64_t scope, int64_t fn, int64_t fv);
 
 /* Legacy C entry: fn is a C function int64_t (*)(void).  Not called by
  * compiled toke code. */
