@@ -233,6 +233,37 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   `let a:@i64=fs.map(&dbl)` or `let s:str=fs.map(&dbl).get(0)`. A closure with
   no declared return and a fallible function are left untyped, as before.
   Tests: C2300–C2304, `test/standalone/test_127_550.tk`.
+- **`xs.reduce(init;f)` and `xs.fold(init;f)` are `f`'s return type**
+  (127.551). After 127.548 `@(1.5;2.5;0.25).reduce(0.0;&add)` computed 4.25,
+  but the checker did not model `.reduce` / `.fold` (127.550 added only
+  `.map`), so the result was untyped and the emitter read it as an integer:
+  `"\(fs.reduce(0.0;&add))"` and a `let` copy printed `4616471093031469056`,
+  `j.enc` encoded the same number and `==4.25` was false. A `bool`
+  accumulator interpolated and encoded as `1`/`0`, and a `str` or record
+  accumulator encoded its pointer. The checker now types the call on a known
+  array as the declared return of the two-parameter function value (`&f`, a
+  closure with a declared return, a `let g=&f` value or a function
+  parameter), and the emitter reads an `f64` result back as a double and a
+  `bool` result as a bool. A mismatched use of the result is now E4031, for
+  example `let a:i64=fs.reduce(0.0;&add)`. An `i64` reduce is unchanged; a
+  closure with no declared return and a fallible function are left untyped.
+  Tests: C2310–C2312, `test/standalone/test_127_551.tk`.
+- **A combinator's function value is checked against the array it runs over**
+  (127.552). `.map`, `.filter`, `.reduce`, `.fold` and `.sort` checked only
+  their own argument count (E4026), so `fs.map(&add)` with
+  `add:(f64;f64):f64` and `@(1;2).map(&dbl)` with `dbl:(f64):f64` passed
+  `--check`. At run time 127.548's adapter read an argument slot nobody
+  passed, or reinterpreted an `i64` element as a double. The checker now
+  judges the function value's signature at the call, against the receiver's
+  element type `T`: `.map` takes `(T)`, `.filter` takes `(T)` and returns
+  `bool` or an integer, `.reduce` / `.fold` take `(A;T):A` with the seed an
+  `A`, and `.sort` takes `(T;T)` and returns a number or a `bool`. A mismatch
+  is E4031 on the argument, with no `fix`. Two consequences can change a
+  program: an integer literal seed for an `f64` accumulator
+  (`fs.reduce(0;&add)`) is now E4031, as `add(0;1.5)` is; and a fallible
+  accumulator function is rejected. A value with no known signature, a
+  receiver whose element type is not known, and the return of a closure
+  that declares none are not judged. Tests: C2313, C2314.
 - **`task.spawn` and the `spawn` keyword run any function value correctly,
   on every target** (127.549, the 127.548 defect in std.task). task.c called
   the value it was handed as `int64_t f(void)`: a `bool` task's
@@ -255,6 +286,34 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
 
 ### Security fixes
 
+- **The security nightly's `fuzz-yaml` run no longer dies of out-of-memory**
+  (127.555). It failed every night from 2026-11-24 with `libFuzzer:
+  out-of-memory (used: ~2060Mb; limit: 2048Mb)`. The cause was the fuzz
+  harness, not `std.yaml`: `test/fuzz/fuzz_yaml.c` left every
+  `yaml_from_json` / `yaml_to_json` result allocated, so memory grew with the
+  number of inputs run until it crossed the limit. The input saved as the
+  crash (`crash-yaml-oom-9422235b`, 97 bytes) is simply the one that was
+  running when that happened; replayed alone it peaks at about 16 MB. The
+  harness now frees each heap result and leaves the converters' literal
+  fallbacks alone. On a native arm64 Linux run with the nightly's settings,
+  300 s of fuzzing peaked at 645 MB and was still rising before the fix, and
+  levelled off at 411 MB after it. `make fuzz-smoke` now replays `fuzz-yaml`
+  with LeakSanitizer on under Linux (`FUZZ_LEAK_TARGETS`), so a harness or
+  converter that leaks fails the replay at once instead of slowly eating a
+  nightly. The unit is kept as
+  `test/fuzz/corpus-adversarial/yaml_nightly_oom_unit_127555.bin`.
+  `yaml.c` is unchanged.
+- **The nightly's `fuzz-toon` run frees its results too** (127.556). The
+  harness had the same leak: every `toon_from_json` / `toon_to_json` result
+  stayed allocated, and the nightly's `crash-toon-oom-a09c1372` (1,462
+  bytes, about 10 MB replayed alone) was the input running when memory
+  crossed the limit. This is not the fields x rows amplification tracked as
+  127.546, which needs one input of about 64 KiB. `toon_dec` owns nothing,
+  so only the converters' results are freed. The unit is kept as
+  `test/fuzz/corpus-adversarial/toon_nightly_oom_unit_127556.bin`. With
+  that fixed, all 13 fuzz harnesses replay with no leaks under both engines,
+  so `FUZZ_LEAK_TARGETS` now defaults to every target. `toon.c` is
+  unchanged.
 - **`yaml.fromjson` always returns** (127.542, a denial of service). A 35-byte
   malformed flow mapping found by the security nightly's libFuzzer run
   (`crash-yaml-oom-bcd1502b`: libFuzzer died at a 2 GiB malloc; the standalone

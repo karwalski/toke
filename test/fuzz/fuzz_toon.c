@@ -13,11 +13,20 @@
  *                        elements; each returned element is read here, so a
  *                        length that overstates what was filled faults)
  *
- * OWNERSHIP NOTE: toon_from_json / toon_to_json return EITHER a malloc'd
- * buffer OR a static string literal ("[]") on the error paths, so the
- * returned pointer MUST NOT be freed. This target intentionally leaks the
- * successful results; run with ASAN_OPTIONS=detect_leaks=0 (see 120.5
- * PAR-02/PAR-07).
+ * OWNERSHIP NOTE: toon_from_json / toon_to_json return EITHER a heap
+ * buffer OR a static string literal ("[]") on the error paths (120.5
+ * PAR-02/PAR-07), so a result may be freed only once it is known not to be
+ * a literal.  toon_dec owns nothing: its Toon points at the input and its
+ * error messages are literals.
+ *
+ * 127.556: until now this target left every converter result allocated, so
+ * a libFuzzer run's RSS grew with the number of inputs until the Security
+ * nightly hit its 2048 MB rss_limit_mb (crash-toon-oom-a09c1372, 1,462
+ * bytes, ~10 MB replayed alone) -- the shape 127.555 fixed in fuzz_yaml.c.
+ * Each heap result is now freed; a literal is told apart by asking the
+ * sanitizer allocator whether it owns the pointer (both fuzz engines build
+ * with -fsanitize=address).  fuzz-smoke replays this target with
+ * LeakSanitizer on under Linux (FUZZ_LEAK_TARGETS).
  *
  * Build:  make fuzz-toon   (requires clang with -fsanitize=fuzzer)
  * Story:  120.22; toon_arr and the accessors added by 121.16
@@ -29,7 +38,16 @@
 #include <string.h>
 #include "../../src/stdlib/tk_c99_string.h" /* 127.439: C99 strchr & co. on glibc */
 
+#include <sanitizer/allocator_interface.h>
+
 #include "../../src/stdlib/toon.h"
+
+/* 127.556: free a converter result unless it is one of toon.c's literal
+ * fallbacks, which the allocator does not own. */
+static void free_result(const char *r)
+{
+    if (r && __sanitizer_get_ownership(r)) free((void *)r);
+}
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
@@ -40,9 +58,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     memcpy(input, data, size);
     input[size] = '\0';
 
-    (void)toon_dec(input);
-    (void)toon_from_json(input);   /* result: literal-or-heap, do not free */
-    (void)toon_to_json(input);     /* result: literal-or-heap, do not free */
+    (void)toon_dec(input);         /* owns nothing (see the note above) */
+    free_result(toon_from_json(input));
+    free_result(toon_to_json(input));
 
     ToonResult d = toon_dec(input);
     if (!d.is_err) {
