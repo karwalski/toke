@@ -2613,10 +2613,11 @@ FUZZ_REPLAY_TIMEOUT ?= 25
 # arm64).  fuzz-yaml left every converter result allocated, so its RSS grew
 # with the length of a libFuzzer run until the nightly died at the 2048 MB
 # rss_limit_mb; a leak-checked replay of its inputs fails on that at once.
-# Of the others, a libfuzzer leak replay on Linux (2026-11-28) fails only
-# fuzz-toon, whose harness leaves results allocated the same way; the rest
-# pass it but are not yet checked under the standalone engine.
-FUZZ_LEAK_TARGETS ?= yaml
+# 127.556 fixed fuzz-toon the same way; with that, all 13 targets replay
+# leak-clean under both engines (ubuntu:24.04 arm64, clang 18, 2026-11-28),
+# so every target is leak-checked.  A harness that must leak is taken out
+# of the list by name, with its story, rather than the check turned off.
+FUZZ_LEAK_TARGETS ?= $(FUZZ_TARGETS)
 fuzz-smoke: fuzz-120-22
 	@echo "=== fuzz-smoke: replay seeds + adversarial inputs [$(FUZZ_ENGINE_R)] -- a replay, not fuzzing ==="
 	@fail=0; for t in $(FUZZ_TARGETS); do \
