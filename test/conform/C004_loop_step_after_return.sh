@@ -21,12 +21,13 @@
 # A terminated body reaches the header through its own terminator (or leaves
 # the function), so its step is dead code either way.
 #
-# Story: 127.70
+# Story: 127.70, 127.559
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 # The ~/tk/toke/tkc symlink is relinked by any concurrent `make`; $TKC lets a
 # caller pin a resolved binary for the run (131.39).
 TKC="${TKC:-${REPO_ROOT}/tkc}"
@@ -62,12 +63,12 @@ run_case() {
             FAIL=$((FAIL + 1))
             continue
         fi
-        out="$(perl -e 'alarm 20; exec @ARGV' ./case_bin 2>&1)" || rc=$?
+        out="$(tk_run ./case_bin 2>&1)" || rc=$?
         if [ "${out}" = "${expected}" ]; then
             echo "  PASS: ${name} ${o}"
             PASS=$((PASS + 1))
         else
-            echo "  FAIL: ${name} ${o}: expected [${expected}], got [${out}] (rc ${rc})"
+            echo "  FAIL: ${name} ${o}: expected [${expected}], got [${out}] (rc $(tk_rc "${rc}"))"
             FAIL=$((FAIL + 1))
         fi
     done

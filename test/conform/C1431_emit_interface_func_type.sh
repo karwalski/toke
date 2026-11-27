@@ -15,13 +15,13 @@
 # Negative control: TKC built from integrate/z-wave-1113b (c0a8bee7) --
 # cases 1-7 red (each spelled "("); case 8 green on both.
 #
-# Story: 127.376
+# Story: 127.376, 127.559
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/toke}"
-RUN="${REPO_ROOT}/test/run_test.sh"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
 PASS=0; FAIL=0
 expect() {
@@ -59,8 +59,8 @@ f=dbl(x:i64):i64{<x*2};
 f=main():i64{let r=l.mk();io.println("\(r.n) \(l.ap(dbl;20))");<0};
 EOF
 out="$(cd "${WORK}" && "${TKC}" --check b_main.tk 2>&1; echo "rc=$?")"
-( cd "${WORK}" && "${RUN}" 60 "${TKC}" a_lib.tk b_main.tk -o bm >/dev/null 2>&1 )
-got="$( [ -x "${WORK}/bm" ] && "${RUN}" 20 "${WORK}/bm" 2>&1 | tr '\n' ' ')"
+( cd "${WORK}" && tk_build "${TKC}" a_lib.tk b_main.tk -o bm >/dev/null 2>&1 ) || tk_build_failed $?
+got="$( [ -x "${WORK}/bm" ] && tk_run "${WORK}/bm" 2>&1 | tr '\n' ' ')"
 expect "8 importer checks clean and runs as before" "${out} ${got}" "rc=0 1 40 "
 
 echo "C1431: ${PASS} passed, ${FAIL} failed"
