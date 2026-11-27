@@ -2608,6 +2608,13 @@ fuzz-120-22: fuzz-json fuzz-yaml fuzz-toml fuzz-toon fuzz-xml fuzz-template \
 # (libFuzzer -timeout=, the standalone driver's alarm), so an input that
 # never returns fails the gate, naming the input, instead of hanging it.
 FUZZ_REPLAY_TIMEOUT ?= 25
+# 127.555: the targets whose harness frees everything it allocates, replayed
+# with LeakSanitizer on where it runs (Linux; LSan is unsupported on macOS
+# arm64).  fuzz-yaml left every converter result allocated, so its RSS grew
+# with the length of a libFuzzer run until the nightly died at the 2048 MB
+# rss_limit_mb; a leak-checked replay of its inputs fails on that at once.
+# The other harnesses still leave results allocated and are not listed.
+FUZZ_LEAK_TARGETS ?= yaml
 fuzz-smoke: fuzz-120-22
 	@echo "=== fuzz-smoke: replay seeds + adversarial inputs [$(FUZZ_ENGINE_R)] -- a replay, not fuzzing ==="
 	@fail=0; for t in $(FUZZ_TARGETS); do \
@@ -2615,16 +2622,18 @@ fuzz-smoke: fuzz-120-22
 	  [ -d test/fuzz/seeds/$$t ] && [ -n "$$(ls test/fuzz/seeds/$$t)" ] \
 	    || { echo "  FAIL $$t: no seeds in test/fuzz/seeds/$$t"; fail=1; continue; }; \
 	  adv=$$(ls test/fuzz/corpus-adversarial/$${t}_* 2>/dev/null); \
+	  lk=; case " $(FUZZ_LEAK_TARGETS) " in *" $$t "*) \
+	    [ "$$(uname -s)" = Linux ] && lk=:detect_leaks=1;; esac; \
 	  if [ "$(FUZZ_ENGINE_R)" = libfuzzer ]; then \
-	    out=$$($$b -runs=0 -timeout=$(FUZZ_REPLAY_TIMEOUT) test/fuzz/seeds/$$t/* $$adv 2>&1); rc=$$?; \
+	    out=$$(ASAN_OPTIONS="$$ASAN_OPTIONS$$lk" $$b -runs=0 -timeout=$(FUZZ_REPLAY_TIMEOUT) test/fuzz/seeds/$$t/* $$adv 2>&1); rc=$$?; \
 	    ran=$$(printf '%s\n' "$$out" | grep -a -c '^Executed '); \
 	  else \
-	    out=$$(FUZZ_REPLAY_TIMEOUT=$(FUZZ_REPLAY_TIMEOUT) $$b test/fuzz/seeds/$$t $$adv 2>&1); rc=$$?; ran=; \
+	    out=$$(ASAN_OPTIONS="$$ASAN_OPTIONS$$lk" FUZZ_REPLAY_TIMEOUT=$(FUZZ_REPLAY_TIMEOUT) $$b test/fuzz/seeds/$$t $$adv 2>&1); rc=$$?; ran=; \
 	  fi; \
 	  n=$$(ls test/fuzz/seeds/$$t | wc -l | tr -d ' '); a=$$(printf '%s\n' $$adv | grep -c . ); \
 	  if [ $$rc -eq 0 ] && [ -n "$$ran" ] && [ "$$ran" -ne $$((n + a)) ]; then \
 	    echo "  FAIL $$t: replayed $$ran of $$((n + a)) input(s)"; fail=1; \
-	  elif [ $$rc -eq 0 ]; then echo "  ok   $$t  ($$n seed(s), $$a adversarial)"; \
+	  elif [ $$rc -eq 0 ]; then echo "  ok   $$t  ($$n seed(s), $$a adversarial$${lk:+, leak-checked})"; \
 	  else echo "  FAIL $$t (exit $$rc)"; \
 	    msg=$$(printf '%s\n' "$$out" | grep -a -E 'ERROR: |runtime error|SUMMARY|fuzz-replay|TIMEOUT' | head -6); \
 	    [ -n "$$msg" ] || msg=$$(printf '%s\n' "$$out" | tail -4); \
