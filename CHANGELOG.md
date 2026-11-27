@@ -233,6 +233,37 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   `let a:@i64=fs.map(&dbl)` or `let s:str=fs.map(&dbl).get(0)`. A closure with
   no declared return and a fallible function are left untyped, as before.
   Tests: C2300–C2304, `test/standalone/test_127_550.tk`.
+- **`xs.reduce(init;f)` and `xs.fold(init;f)` are `f`'s return type**
+  (127.551). After 127.548 `@(1.5;2.5;0.25).reduce(0.0;&add)` computed 4.25,
+  but the checker did not model `.reduce` / `.fold` (127.550 added only
+  `.map`), so the result was untyped and the emitter read it as an integer:
+  `"\(fs.reduce(0.0;&add))"` and a `let` copy printed `4616471093031469056`,
+  `j.enc` encoded the same number and `==4.25` was false. A `bool`
+  accumulator interpolated and encoded as `1`/`0`, and a `str` or record
+  accumulator encoded its pointer. The checker now types the call on a known
+  array as the declared return of the two-parameter function value (`&f`, a
+  closure with a declared return, a `let g=&f` value or a function
+  parameter), and the emitter reads an `f64` result back as a double and a
+  `bool` result as a bool. A mismatched use of the result is now E4031, for
+  example `let a:i64=fs.reduce(0.0;&add)`. An `i64` reduce is unchanged; a
+  closure with no declared return and a fallible function are left untyped.
+  Tests: C2310–C2312, `test/standalone/test_127_551.tk`.
+- **A combinator's function value is checked against the array it runs over**
+  (127.552). `.map`, `.filter`, `.reduce`, `.fold` and `.sort` checked only
+  their own argument count (E4026), so `fs.map(&add)` with
+  `add:(f64;f64):f64` and `@(1;2).map(&dbl)` with `dbl:(f64):f64` passed
+  `--check`. At run time 127.548's adapter read an argument slot nobody
+  passed, or reinterpreted an `i64` element as a double. The checker now
+  judges the function value's signature at the call, against the receiver's
+  element type `T`: `.map` takes `(T)`, `.filter` takes `(T)` and returns
+  `bool` or an integer, `.reduce` / `.fold` take `(A;T):A` with the seed an
+  `A`, and `.sort` takes `(T;T)` and returns a number or a `bool`. A mismatch
+  is E4031 on the argument, with no `fix`. Two consequences can change a
+  program: an integer literal seed for an `f64` accumulator
+  (`fs.reduce(0;&add)`) is now E4031, as `add(0;1.5)` is; and a fallible
+  accumulator function is rejected. A value with no known signature, a
+  receiver whose element type is not known, and the return of a closure
+  that declares none are not judged. Tests: C2313, C2314.
 - **`task.spawn` and the `spawn` keyword run any function value correctly,
   on every target** (127.549, the 127.548 defect in std.task). task.c called
   the value it was handed as `int64_t f(void)`: a `bool` task's

@@ -1,0 +1,64 @@
+(* test_127_551.tk -- story 127.551: `xs.reduce(init;f)` / `xs.fold(init;f)`
+ * is f's declared RETURN type, so an f64 / bool / str / record accumulator
+ * interpolates, compares and encodes as that type.
+ *
+ * Since 127.548 `@(1.5;2.5;0.25).reduce(0.0;&add)` (add:(f64;f64):f64)
+ * computes 4.25, but the checker did not model `.reduce` / `.fold`
+ * (types.c recv_result_on; 127.550 added only `.map`), so the emitter's i64
+ * default printed 4616471093031469056, a bool accumulator printed 1 and a
+ * str one's j.enc printed its pointer.  Every case below prints PASS/FAIL. *)
+m=test.t127551;
+i=io:std.io;
+i=j:std.json;
+i=s:std.str;
+
+t=$pt{x:i64;y:f64};
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");got)) };
+  <0
+};
+
+f=add(a:f64;b:f64):f64{<a+b};
+f=any(a:bool;b:i64):bool{<a||b>1};
+f=cat(a:str;b:str):str{<s.concat(a;b)};
+f=mx(a:f64;b:i64):f64{if(a>2.0){<a};<a+1.5};
+f=acc(a:$pt;b:i64):$pt{<$pt{x:a.x+b;y:a.y+0.5}};
+f=sum(a:i64;b:i64):i64{<a+b};
+f=dbl(x:f64):f64{<x*2.0};
+f=tot(xs:@f64):f64{<xs.reduce(0.0;&add)};
+f=ap(xs:@f64;g:(f64;f64):f64):f64{<xs.fold(0.0;g)};
+
+f=main():$i64{
+  let fs=@(1.5;2.5;0.25);
+  let ns=@(1;2;3);
+  cks("f64-interp";"\(fs.reduce(0.0;&add))";"4.25");
+  let q=fs.reduce(0.0;&add);
+  cks("f64-let";"\(q)";"4.25");
+  cks("f64-fold";"\(fs.fold(1.0;&add))";"5.25");
+  cks("f64-enc";j.enc(q);"4.25");
+  cks("f64-compare";if(q==4.25){"t"}el{"f"};"t");
+  cks("f64-arith";"\(fs.reduce(0.0;&add)*2.0)";"8.5");
+  let g=&add;
+  cks("fnref-local";"\(fs.reduce(0.0;g))";"4.25");
+  cks("closure-lit";"\(fs.reduce(0.0;fn(a:f64;b:f64):f64{<a*b+1.0}))";"1.875");
+  let k=0.5;
+  cks("closure-capture";"\(fs.fold(0.0;fn(a:f64;b:f64):f64{<a+b*k}))";"2.125");
+  let h=fn(a:f64;b:f64):f64{<a-b};
+  cks("closure-local";"\(fs.fold(0.0;h))";"-4.25");
+  cks("fn-param";"\(ap(fs;&add))";"4.25");
+  cks("fn-return";"\(tot(fs))";"4.25");
+  cks("chain-map";"\(fs.map(&dbl).reduce(0.0;&add))";"8.5");
+  cks("bool-interp";"\(ns.reduce(false;&any))";"true");
+  cks("bool-enc";j.enc(ns.fold(false;&any));"true");
+  cks("str-interp";"\(@("a";"b").reduce(">";&cat))";">ab");
+  cks("str-enc";j.enc(@("a";"b").fold("";&cat));"\"ab\"");
+  let r=ns.reduce($pt{x:0;y:0.0};&acc);
+  cks("rec-field";"\(r.x),\(r.y)";"6,1.5");
+  cks("rec-enc";j.enc(ns.fold($pt{x:1;y:1.0};&acc));"{\"x\":7,\"y\":2.5}");
+  cks("mixed-acc";"\(ns.reduce(0.0;&mx))";"3");
+  cks("i64";"\(ns.reduce(0;&sum))";"6");
+  cks("untyped-closure";"\(ns.reduce(0;fn(a:i64;b:i64){<a+b}))";"6");
+  <0
+};

@@ -85,7 +85,7 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | E4025 | error | type_check | Struct has no field with that name | D092, T001 |
 | E4026 | error | type_check | Wrong argument count in function call | C035, D710-D713, C2057 |
 | E4027 | error | type_check | Module has no exported member with that name | D093, C038, C219, T002 |
-| E4031 | error | type_check | Type mismatch | D086, D570-D574, C038, C249, C1810 |
+| E4031 | error | type_check | Type mismatch | D086, D570-D574, C038, C249, C1810, C2313, C2314 |
 | E4032 | error | type_check | Cannot interpolate a composite value into a string | n/s |
 | E4033 | error | type_check | A type name used where a value is required | T003 |
 | E4034 | error | type_check | Field access on a layout the compiler cannot establish | T003 |
@@ -926,7 +926,7 @@ member is carried in the `got` field.
 | **Severity** | error |
 | **Message** | `type mismatch: expected '<T1>', got '<T2>'` |
 | **Fix field** | present (contextual, e.g. `"cast RHS to i64 using 'as'"`; for `x==@()` / `x!=@()`, the rewritten comparison `"x.len==0"` / `"x.len!=0"`) |
-| **Conformance test** | D086, D570-D574, C038, C249, C1810 |
+| **Conformance test** | D086, D570-D574, C038, C249, C1810, C2313, C2314 |
 
 **Notes:** The workhorse type error. Emitted for mismatched operands in binary
 expressions, mismatched function arguments, mismatched binding annotations,
@@ -944,6 +944,15 @@ present only when the cast cannot change the value -- any integer into `i64`,
 or `f32` into `f64` (story 127.230); a narrowing, a non-numeric pair and an
 array of another element type get no fix. An integer literal that fits the
 declared integer type is not a mismatch at all (`let b:u8=5`).
+
+**A combinator's function value** (story 127.552) is judged against the
+receiver's element type `T`: `.map` takes `(T)`, `.filter` takes `(T)` returning
+`bool` or an integer, `.reduce` / `.fold` take `(A;T):A` with the seed an `A`,
+and `.sort` takes `(T;T)` returning a number or a `bool`. The diagnostic is on
+the function argument (on the seed when the seed is not an `A`), `expected` is
+the signature the combinator calls (e.g. `(i64):R`) and `got` the value's; no
+fix. A value with no known signature, an unknown parameter or return, and a
+receiver whose element type is not established are not judged.
 
 **`==` / `!=` the emitter has no equality for** are E4031 too. Both operands
 struct or sum values (story 138.9, loke T-14):

@@ -6141,6 +6141,22 @@ static int emit_expr(Ctx *c, const Node *n)
                     fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0 ; bool map getor (rtype)\n", bz, t);
                     t = bz;
                 }
+                /* 127.551: `xs.reduce(init;f)` / `.fold` is f's declared
+                 * return (recv_reduce_result_type); tk_arr_reduce carries an
+                 * f64 accumulator as its bits and a bool one as 0/1 in the
+                 * i64 ABI, so read it back as the value it is.  expr_llvm_type
+                 * answers "double" / "i1" on the same rtype. */
+                if (!strcmp(fn_im, "tk_arr_reduce") && n->rtype
+                    && n->rtype->kind == TY_F64) {
+                    int bc = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = bitcast i64 %%t%d to double ; f64 reduce (rtype)\n", bc, t);
+                    t = bc;
+                } else if (!strcmp(fn_im, "tk_arr_reduce") && n->rtype
+                           && n->rtype->kind == TY_BOOL) {
+                    int bz = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0 ; bool reduce (rtype)\n", bz, t);
+                    t = bz;
+                }
                 if (!strcmp(fn_im, "tk_str_arrayget_w")) {
                     const char *base_stype = NULL;
                     if (n->children[0]->children[0]->kind == NODE_IDENT) {
@@ -10228,6 +10244,16 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
                     if (!strcmp(c->imports[ii].alias, _ga)) { _gmod = 1; break; }
                 if (alias_is_value(c, n->children[0]->children[0])) _gmod = 0;
                 if (!_gmod) return n->rtype->kind == TY_F64 ? "double" : "i1";
+            }
+            /* 127.551: an f64 / bool `xs.reduce(init;f)` / `.fold` --
+             * emit_expr converts tk_arr_reduce's i64 on the same rtype. */
+            if ((!strcmp(_gm, "reduce") || !strcmp(_gm, "fold")) && n->rtype
+                && (n->rtype->kind == TY_F64 || n->rtype->kind == TY_BOOL)) {
+                int _rmod = 0;
+                for (int ii = 0; ii < c->import_count; ii++)
+                    if (!strcmp(c->imports[ii].alias, _ga)) { _rmod = 1; break; }
+                if (alias_is_value(c, n->children[0]->children[0])) _rmod = 0;
+                if (!_rmod) return n->rtype->kind == TY_F64 ? "double" : "i1";
             }
             if (!strcmp(_gm, "get")) {
                 int _is_mod = 0;
