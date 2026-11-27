@@ -84,15 +84,26 @@ closures/error-unions are not yet type-checked (see #3 follow-ups / ADR-0014).
 ### 6. No concurrency primitives beyond `std.task`
 
 `std.task` provides `task.scope()`, `task.spawn(scope; &fn)`,
-`task.await_all(scope)`, and `task.result(handle)` — basic structured
-concurrency with a thread pool. There are no channels, mutexes, atomics, or
-`sc`/`spawn` keywords.
+`task.awaitall(scope)`, and `task.result(handle)` — basic structured
+concurrency with a thread pool. There are no channels, mutexes or atomics,
+and the `sc`/`spawn` keywords are partial (below).
 
 **Workaround:** Use `std.task` for coarse-grained parallelism. For HTTP
 servers, ooke uses pre-fork for scaling.
 
 **Planned fix:** `sc`/`spawn` keywords deferred to v0.5 (Story 76.1.1b).
 Formal memory model documented (Story 76.1.4).
+
+**As implemented (verified 2026-11-26, story 127.549):** the parser accepts
+`sc{ ... }` and, inside it, `spawn f` where `f` is a `():T` function value
+(`spawn &w`, a closure); `sc` awaits its tasks at the closing brace and
+`spawn` yields a task handle. Both lower to the same runtime as
+`task.spawn`, so results and closures behave as `docs/stdlib/task.md`
+describes. Two gaps remain, tracked as story 127.553: a program using `sc`
+without `i=task:std.task;` does not link (E9003, undefined `tk_task_*`),
+and reading a result still needs `task.result` from std.task. `spawn w()`
+(a call) and `task.spawn(s;w())` are E4081: they used to run `w` at once and
+spawn its result as code.
 
 ### 7. ~~Bitwise operators deferred~~ — IMPLEMENTED
 

@@ -4,7 +4,7 @@
  *
  * Structured concurrency using pthreads.  Provides:
  *   - scope (nursery) creation / destruction
- *   - spawn: submit a toke function pointer to run on a worker thread
+ *   - spawn: submit a toke function value to run on a worker thread
  *   - awaitall: join every task in a scope
  *   - result: retrieve the i64 return value of a completed task
  *   - cancel: request cancellation of all tasks in a scope
@@ -12,6 +12,22 @@
  * Thread pool: fixed size = number of online CPUs (sysconf).
  *
  * Story: 76.1.1a
+ *
+ * 127.549: compiled code spawns through tk_task_spawn_fv(scope, fn, fv): `fn`
+ * is a C-ABI adapter the compiler emits per signature (@__tk_fvc_<key>, the
+ * 127.548 machinery, here with no arguments), `fv` the function value.  The
+ * task used to be the bare value called as `int64_t (*)(void)`: a bool task's
+ * result was an i1 register whose upper bits x86-64 leaves undefined, an f64
+ * task's result sat in a float register C never read, and a closure (env+1)
+ * would have been called as code.  The adapter returns a defined i64 (zext of
+ * a bool, the bits of an f64, a narrow int extended by its signedness).
+ *
+ * A closure outlives the spawning statement and runs on another thread, so
+ * the task OWNS one reference to the value: the compiler hands it over +1,
+ * and the worker releases it (tk_clos_release, an atomic count) once the
+ * function has returned -- or at once when the task never runs (cancelled,
+ * scope full or not a scope).  A plain function address is not counted, and
+ * releasing it is a no-op.
  */
 
 #include "task.h"
@@ -31,7 +47,8 @@
 
 typedef struct tk_task {
     pthread_t       thread;
-    int64_t         (*fn)(void);    /* toke function pointer (no args, returns i64) */
+    int64_t         (*fn)(int64_t); /* 127.549: C-ABI adapter, called as fn(fv); NULL: legacy */
+    int64_t         fv;             /* the function value; a closure reference the task owns */
     int64_t         result;
     int             done;           /* 1 once the task function has returned */
     int             cancelled;
@@ -89,12 +106,16 @@ static void *pool_worker(void *arg)
 
         /* Execute the task */
         tk_task *t = job->task;
-        if (!t->cancelled) {
-            t->result = t->fn();
+        if (!__atomic_load_n(&t->cancelled, __ATOMIC_ACQUIRE)) {
+            t->result = t->fn ? t->fn(t->fv)
+                              : ((int64_t (*)(void))(intptr_t)t->fv)();
         } else {
             t->result = -1;
         }
-        t->done = 1;
+        if (t->fn) tk_clos_release(t->fv);   /* 127.549: the task's reference */
+        /* 127.549: publish the result before the flag -- awaitall and
+         * task.result read them from another thread */
+        __atomic_store_n(&t->done, 1, __ATOMIC_RELEASE);
         free(job);
     }
     return NULL;
@@ -125,7 +146,14 @@ static void pool_submit(tk_task *task)
     pthread_once(&g_pool_once, pool_init);
 
     tk_pool_job *job = (tk_pool_job *)malloc(sizeof(tk_pool_job));
-    if (!job) return;
+    if (!job) {
+        /* 127.549: never queued, so finish it here -- a task left not done
+         * hung awaitall forever (and kept its closure) */
+        task->result = -1;
+        if (task->fn) tk_clos_release(task->fv);
+        __atomic_store_n(&task->done, 1, __ATOMIC_RELEASE);
+        return;
+    }
     job->task = task;
     job->next = NULL;
 
@@ -185,6 +213,9 @@ static tk_task *handle_lookup(int64_t handle)
  * the runtime's strong definitions replace them in every program. */
 __attribute__((weak)) void *tk_handle_adopt(int kind, void *p) { (void)kind; return p; }
 __attribute__((weak)) void *tk_handle_addr(int kind, int64_t v) { (void)kind; return (void *)(intptr_t)v; }
+/* 127.549: the same arrangement for the closure release a finished task
+ * makes; tk_runtime.c's definition (an atomic count) is the one programs use. */
+__attribute__((weak)) void tk_clos_release(int64_t v) { (void)v; }
 static tk_scope *scope_in(int64_t v) { return (tk_scope *)tk_handle_addr(TK_HK_TASKSCOPE, v); }
 
 /* ── Public API ───────────────────────────────────────────────────── */
@@ -208,22 +239,34 @@ int64_t tk_task_scope(void)
     return (int64_t)(intptr_t)s;
 }
 
-/* task.spawn(scope:i64; fn:i64):i64 */
-int64_t tk_task_spawn(int64_t scope, int64_t fn)
+/* Queue a task.  `fn` NULL is the legacy C entry (tk_task_spawn): `fv` is
+ * then a C function address called as int64_t (*)(void).  Otherwise `fn` is
+ * the compiler's adapter and the task owns one reference to `fv`, released
+ * here on every path that does not queue it. */
+static int64_t spawn_task(int64_t scope, int64_t (*fn)(int64_t), int64_t fv)
 {
     tk_scope *s = scope_in(scope);   /* 138.47 */
-    if (!s || !fn) return -1;
+    if (!s || !fv) {
+        if (fn) tk_clos_release(fv);
+        return -1;
+    }
 
     pthread_mutex_lock(&s->mu);
     if (s->count >= TK_TASK_MAX_PER_SCOPE || s->cancel_requested) {
         pthread_mutex_unlock(&s->mu);
+        if (fn) tk_clos_release(fv);
         return -1;
     }
 
     tk_task *t = (tk_task *)calloc(1, sizeof(tk_task));
-    if (!t) { pthread_mutex_unlock(&s->mu); return -1; }
+    if (!t) {
+        pthread_mutex_unlock(&s->mu);
+        if (fn) tk_clos_release(fv);
+        return -1;
+    }
 
-    t->fn = (int64_t(*)(void))(intptr_t)fn;
+    t->fn = fn;
+    t->fv = fv;
     t->done = 0;
     t->cancelled = 0;
     t->result = 0;
@@ -239,6 +282,21 @@ int64_t tk_task_spawn(int64_t scope, int64_t fn)
     return handle;
 }
 
+/* task.spawn(scope:i64; fn:i64):i64 as compiled code calls it (127.549):
+ * `fn` the C-ABI adapter, `fv` the function value (+1, owned by the task). */
+int64_t tk_task_spawn_fv(int64_t scope, int64_t fn, int64_t fv)
+{
+    if (!fn) { tk_clos_release(fv); return -1; }
+    return spawn_task(scope, (int64_t (*)(int64_t))(intptr_t)fn, fv);
+}
+
+/* Legacy C entry (tk_task_spawn_w): `fn` a C function int64_t (*)(void).
+ * Compiled toke code never calls this; it calls tk_task_spawn_fv. */
+int64_t tk_task_spawn(int64_t scope, int64_t fn)
+{
+    return spawn_task(scope, NULL, fn);
+}
+
 /* task.awaitall(scope:i64):i64 */
 int64_t tk_task_awaitall(int64_t scope)
 {
@@ -252,7 +310,7 @@ int64_t tk_task_awaitall(int64_t scope)
         int all_done = 1;
         pthread_mutex_lock(&s->mu);
         for (int i = 0; i < s->count; i++) {
-            if (!s->tasks[i]->done) { all_done = 0; break; }
+            if (!__atomic_load_n(&s->tasks[i]->done, __ATOMIC_ACQUIRE)) { all_done = 0; break; }
         }
         pthread_mutex_unlock(&s->mu);
         if (all_done) break;
@@ -267,7 +325,7 @@ int64_t tk_task_result(int64_t handle)
 {
     tk_task *t = handle_lookup(handle);
     if (!t) return -1;
-    if (!t->done) return -1;   /* not yet finished */
+    if (!__atomic_load_n(&t->done, __ATOMIC_ACQUIRE)) return -1;   /* not yet finished */
     return t->result;
 }
 
@@ -280,7 +338,7 @@ int64_t tk_task_cancel(int64_t scope)
     pthread_mutex_lock(&s->mu);
     s->cancel_requested = 1;
     for (int i = 0; i < s->count; i++)
-        s->tasks[i]->cancelled = 1;
+        __atomic_store_n(&s->tasks[i]->cancelled, 1, __ATOMIC_RELEASE);
     pthread_mutex_unlock(&s->mu);
 
     return 0;

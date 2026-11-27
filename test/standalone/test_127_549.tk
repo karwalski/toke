@@ -1,0 +1,73 @@
+(* test_127_549.tk -- story 127.549: a function value task.spawn (or the
+ * `spawn` keyword inside sc{}) runs on a pool thread reaches the C runtime
+ * through a C-ABI adapter that returns a well-defined i64.
+ *
+ * Before the fix src/stdlib/task.c called the value it was handed as a C
+ * function taking no arguments and returning int64_t.  A `bool` task
+ * (fastcc i1) defines only bit 0 of the return register on x86-64, so
+ * task.result read undefined upper bits; an f64 task returned in a float
+ * register the runtime never read (0 on arm64 too); and a closure value
+ * (env+1) was called as code (SIGBUS on arm64).  A closure task holds a
+ * reference to its environment until it has run.
+ * Every case below prints PASS/FAIL. *)
+m=test.t127549;
+i=io:std.io;
+i=s:std.str;
+i=task:std.task;
+i=math:std.math;
+
+f=cks(name:str;got:i64;want:i64):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat(s.concat("FAIL ";name);" got=");got as str);"")) };
+  <0
+};
+
+f=pos():bool{<3>0};
+f=neg():bool{<3<0};
+f=half():f64{<1.5};
+f=n32():i32{<-5};
+f=u16v():u16{<65000};
+f=w():i64{<42};
+f=mk(k:i64):():i64{<fn():i64{<k*3}};
+f=spawnit(sc0:i64;g:():bool):i64{<task.spawn(sc0;g)};
+
+f=main():$i64{
+  let sc0=task.scope();
+  let a=task.spawn(sc0;&pos);
+  let b=task.spawn(sc0;&neg);
+  let c=task.spawn(sc0;&half);
+  let d=task.spawn(sc0;&n32);
+  let e=task.spawn(sc0;&u16v);
+  let g=task.spawn(sc0;&w);
+  let k=7;
+  let cl=fn():bool{<k>5};
+  let h1=task.spawn(sc0;fn():i64{<k+1});
+  let h2=task.spawn(sc0;cl);
+  let h3=task.spawn(sc0;cl);
+  let h4=task.spawn(sc0;mk(10));
+  let h5=spawnit(sc0;fn():bool{<k<5});
+  let h6=task.spawn(sc0;fn():f64{<0.25});
+  let rc=task.awaitall(sc0);
+  cks("awaitall";rc;0);
+  cks("bool-true";task.result(a);1);
+  cks("bool-false";task.result(b);0);
+  cks("f64-bits";task.result(c);math.tobits(1.5));
+  cks("i32-neg";task.result(d);0-5);
+  cks("u16";task.result(e);65000);
+  cks("i64";task.result(g);42);
+  cks("closure-literal-capture";task.result(h1);8);
+  cks("closure-local-bool";task.result(h2);1);
+  cks("closure-local-again";task.result(h3);1);
+  cks("closure-returned";task.result(h4);30);
+  cks("closure-via-param";task.result(h5);0);
+  cks("closure-f64";task.result(h6);math.tobits(0.25));
+  cks("closure-local-still-callable";if(cl()){1}el{0};1);
+  let r=mut.@(0;0);
+  sc{
+    r=r.set(0;spawn &neg);
+    r=r.set(1;spawn fn():i64{<k*k})
+  };
+  cks("spawn-kw-bool";task.result(r.get(0));0);
+  cks("spawn-kw-closure";task.result(r.get(1));49);
+  <0
+};

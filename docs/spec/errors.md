@@ -107,6 +107,7 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | E4078 | error | type_check | Struct literal gives a field more than once | n/s |
 | E4079 | error | type_check | `as str` cast of a composite (record / array / map) | n/s |
 | E4080 | error | type_check | Match on a record value names variants | n/s |
+| E4081 | error | type_check | task.spawn / spawn operand is not a function value taking no parameters | C2309 |
 | E5001 | error | arena_check | Value escapes arena scope | D770, D771, C2250 |
 | W5001 | warning | arena_check | Value may escape arena scope | n/s |
 | E5002 | error | arena_check | Unreachable code after return | -- |
