@@ -3593,7 +3593,7 @@ static void emit_fvc_adapters(Ctx *c) {
  * emit_owned) that the runtime releases when the task is done (task.c). */
 static int emit_task_spawn(Ctx *c, int scope_v, const Node *fn_n) {
     int fv;
-    if (fn_n && fn_n->kind != NODE_FUNC_REF && fnv_expr(c, fn_n)) fv = emit_owned(c, fn_n);
+    if (fn_n->kind != NODE_FUNC_REF && fnv_expr(c, fn_n)) fv = emit_owned(c, fn_n);
     else fv = emit_expr(c, fn_n);
     fv = coerce_value(c, fv, expr_llvm_type(c, fn_n), "i64");
     char asym[64]; fvc_adapter(c, fn_n, 0, asym, sizeof asym);
