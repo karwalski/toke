@@ -29,7 +29,15 @@
 # the old initialiser scan stopped at the annotation's `:` by accident, and
 # the case keeps that from regressing now that it is a stated rule.
 #
-# Story: 131.59
+# Load (127.558): the four builds (2b/2c, 10) ran under a 20 s alarm, so on
+# a host at load 60-250 a compile that was merely slow was killed, its binary
+# was missing and its checks failed as "rc=127" (4 of 17 on one tree).  A
+# build now has BUILD_SECS (default 600, TK_CONFORM_BUILD_SECS overrides), which
+# only a hang reaches, and a build that does not produce its binary fails by
+# name -- "timed out after N s" (SIGALRM, rc 142) or "failed rc=N" -- rather
+# than as a wrong result further down.
+#
+# Story: 131.59, 127.558
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -43,6 +51,21 @@ expect() {
     else echo "FAIL $1"; echo "        expected: $3"; echo "        got:      $2"; FAIL=$((FAIL + 1)); fi
 }
 WORK="$(mktemp -d)"; trap 'rm -rf "${WORK}"' EXIT
+BUILD_SECS="${TK_CONFORM_BUILD_SECS:-600}"
+
+# build LABEL SRC OUT -- compile SRC to OUT under the hang guard; a build that
+# times out or fails is a named FAIL here, not a missing binary later.
+build() {
+    "${RUN}" "${BUILD_SECS}" "${TKC}" "$2" -o "$3" >"${WORK}/build.err" 2>&1
+    local rc=$?
+    if [ "${rc}" -eq 142 ]; then
+        echo "FAIL $1: build of $(basename "$2") timed out after ${BUILD_SECS} s (a hang, not load)"
+        FAIL=$((FAIL + 1)); return 1
+    elif [ "${rc}" -ne 0 ] || [ ! -x "$3" ]; then
+        echo "FAIL $1: build of $(basename "$2") failed rc=${rc}: $(head -c 300 "${WORK}/build.err")"
+        FAIL=$((FAIL + 1)); return 1
+    fi
+}
 
 # fix_for FILE NAME -> the replacement of the single-use-let hint on NAME,
 # "<none>" when the hint has no fix, "<no-hint>" when there is no hint.
@@ -120,8 +143,8 @@ f=main():i64{
 };
 EOF
 sed 's/^  let m2=a.len;$//; s/let d=m2-4;/let d=a.len-4;/' "${WORK}/n.tk" > "${WORK}/n_inl.tk"
-"${RUN}" 20 "${TKC}" "${WORK}/n.tk"     -o "${WORK}/n_bin" >/dev/null 2>&1
-"${RUN}" 20 "${TKC}" "${WORK}/n_inl.tk" -o "${WORK}/n_inl" >/dev/null 2>&1
+build "2b" "${WORK}/n.tk"     "${WORK}/n_bin"
+build "2c" "${WORK}/n_inl.tk" "${WORK}/n_inl"
 expect "2b with the binding: prints -1"            "$("${WORK}/n_bin" 2>&1; echo "rc=$?")" "$(printf -- '-1\nrc=0')"
 expect "2c hand-inlined a.len-4: RT002, a different program" \
        "$("${WORK}/n_inl" 2>&1 | grep -c RT002 | tr -d ' ')" "1"
@@ -178,8 +201,8 @@ expect "9b str literal as a method receiver keeps its fix" "$(fix_for "${WORK}/o
 for p in web ok; do
     cp "${WORK}/${p}.tk" "${WORK}/${p}_b.tk"
     "${TKC}" --lint --fix "${WORK}/${p}_b.tk" >/dev/null 2>&1
-    "${RUN}" 20 "${TKC}" "${WORK}/${p}.tk"   -o "${WORK}/${p}_o1" >/dev/null 2>&1
-    "${RUN}" 20 "${TKC}" "${WORK}/${p}_b.tk" -o "${WORK}/${p}_o2" >/dev/null 2>&1
+    build "10 ${p}" "${WORK}/${p}.tk"   "${WORK}/${p}_o1"
+    build "10 ${p}" "${WORK}/${p}_b.tk" "${WORK}/${p}_o2"
     a="$("${WORK}/${p}_o1" 2>&1; echo "rc=$?")"; b="$("${WORK}/${p}_o2" 2>&1; echo "rc=$?")"
     expect "10 ${p}: --fix output builds and prints the same" "${b}" "${a}"
 done

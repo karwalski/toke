@@ -19,13 +19,16 @@
 # Negative control: TKC built from 06f2b0b4 + 127.314 (10f5a079) --
 # cases 1-4 red (rc 0), 5-8 green on both.
 #
-# Story: 127.315
+# Story: 127.315, 127.558
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/toke}"
 RUN="${REPO_ROOT}/test/run_test.sh"
+# 127.558: a build's alarm is a hang guard only -- 30 s killed slow builds on a
+# loaded host; a timeout is reported as such, not as "build-failed".
+BUILD_SECS="${TK_CONFORM_BUILD_SECS:-600}"
 if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
 PASS=0; FAIL=0
 expect() {
@@ -45,7 +48,10 @@ chk() {
 # run <body> -- build and run the same program: its output
 run() {
     printf '%s\nf=main():i64{\n%s\n<0};\n' "$H" "$1" > "${WORK}/rb.tk"
-    "${RUN}" 30 "${TKC}" "${WORK}/rb.tk" -o "${WORK}/rb" >/dev/null 2>&1 || { echo build-failed; return; }
+    local rc=0
+    "${RUN}" "${BUILD_SECS}" "${TKC}" "${WORK}/rb.tk" -o "${WORK}/rb" >/dev/null 2>&1 || rc=$?
+    [ "${rc}" -eq 142 ] && { echo "build-timed-out-after-${BUILD_SECS}s (a hang)"; return; }
+    [ "${rc}" -eq 0 ] || { echo build-failed; return; }
     "${RUN}" 20 "${WORK}/rb" 2>&1
 }
 
