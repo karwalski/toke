@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # C048_str_indexfrom.sh — str.indexfrom(s; sub; start): indexof with a start.
 #
-# Story: 127.91, 127.559.
+# Story: 127.91, 127.559, 127.561.
 #
 # THE GAP.  `str.indexof(s; sub)` takes two arguments and cannot be told
 # where to begin, so a scanner written in toke had to slice off the tail
@@ -57,17 +57,19 @@ f=main():i64{
 };
 EOF
     rm -f a_bin
-    if ! "${TKC}" --allow-all --out a_bin a.tk >compile.log 2>&1; then
-        echo "  FAIL: ${name}: compile failed"
+    local brc=0
+    tk_build "${TKC}" --allow-all --out a_bin a.tk >compile.log 2>&1 || brc=$?
+    if [ "${brc}" -ne 0 ]; then
+        echo "  FAIL: ${name}: compile failed ($(tk_build_failed "${brc}"))"
         sed 's/^/      /' compile.log | tail -2
         FAIL=$((FAIL + 1)); return
     fi
-    local out; out="$(tk_run ./a_bin 2>&1)"
+    local out rc=0; out="$(tk_run ./a_bin 2>&1)" || rc=$?
     if [ "${out}" = "${expected}" ]; then
         echo "  PASS: ${name} — ${expected}"
         PASS=$((PASS + 1))
     else
-        echo "  FAIL: ${name}: expected ${expected}, got '${out}'"
+        echo "  FAIL: ${name}: expected ${expected}, got '${out}' (rc $(tk_rc "${rc}"))"
         FAIL=$((FAIL + 1))
     fi
 }
@@ -111,16 +113,20 @@ EOF
 # the run is bounded by tk_run's hang guard (TK_CONFORM_RUN_SECS), which
 # names itself (TIMEOUT ... rc 142) in the output when it fires.
 rm -f sc_bin
-scout=""
-if "${TKC}" --allow-all --out sc_bin sc.tk >compile.log 2>&1; then
-    scout="$(tk_run ./sc_bin 2>&1)"
+scout=""; brc=0; rc=0
+tk_build "${TKC}" --allow-all --out sc_bin sc.tk >compile.log 2>&1 || brc=$?
+if [ "${brc}" -eq 0 ]; then
+    scout="$(tk_run ./sc_bin 2>&1)" || rc=$?
 fi
 if [ "${scout}" = "4 9" ]; then
     echo "  PASS: scanner loop — 4 separators, last at 9"
     PASS=$((PASS + 1))
-else
-    echo "  FAIL: scanner loop: got '${scout}' (empty = did not build)"
+elif [ "${brc}" -ne 0 ]; then
+    echo "  FAIL: scanner loop: $(tk_build_failed "${brc}")"
     sed 's/^/      /' compile.log | tail -2
+    FAIL=$((FAIL + 1))
+else
+    echo "  FAIL: scanner loop: got '${scout}' (rc $(tk_rc "${rc}"))"
     FAIL=$((FAIL + 1))
 fi
 
@@ -137,7 +143,7 @@ f=main():i64{
   <0
 };
 EOF
-    out="$("${TKC}" --check bad.tk 2>&1)"
+    out="$(tk_run "${TKC}" --check bad.tk 2>&1)"
     if printf '%s' "${out}" | grep -q '"error_code":"E4026"'; then
         echo "  PASS: ${bad} — E4026"
         PASS=$((PASS + 1))

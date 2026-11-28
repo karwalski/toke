@@ -23,7 +23,7 @@
 # Negative control: TKC=<main f605aec9's toke> — case 1 fails (killed by the
 # alarm, rc 142) and case 3 fails ("zebra quux zebra zebra zebra end").
 #
-# Story: 121.28, 127.559
+# Story: 121.28, 127.559, 127.561
 
 set -uo pipefail
 
@@ -60,8 +60,9 @@ else
     fail "oversize tokens: rc $(tk_rc "${rc}"), $(wc -c <"${WORK}/big.out") bytes out"
 fi
 
-# 2. Short lines unchanged.
-out="$(printf 'x the information $AB12 end\n' | "${TKC}" --compress-stream 2>&1)"
+# 2. Short lines unchanged.  (Cases 2 and 3 run under the same hang guard,
+# 127.561; when it fires the output names it: "TIMEOUT: ... rc 142".)
+out="$(printf 'x the information $AB12 end\n' | tk_run "${TKC}" --compress-stream 2>&1)"
 if [ "${out}" = 'x ~t information $AB12 end' ]; then
     pass "short line: abbreviation and placeholder as before"
 else
@@ -70,7 +71,7 @@ fi
 
 # 3. Decompress back-reference index does not wrap.
 out="$(printf 'TK:P zebra quux @R1 @R4294967297 @R18446744073709551617 end\n' |
-       "${TKC}" --decompress 2>&1)"
+       tk_run "${TKC}" --decompress 2>&1)"
 if [ "${out}" = ' zebra quux zebra   end' ]; then
     pass "@R1 expands; @R4294967297 and @R18446744073709551617 do not"
 else

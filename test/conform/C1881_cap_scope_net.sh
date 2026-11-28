@@ -42,7 +42,7 @@
 # NEGATIVE CONTROL: TKC=<a v3.2.0 toke> -- every denial FAILS (the scope is
 # ignored, or, for the connect: form, the flag grants the whole class).
 #
-# Story: 138.19, 127.559
+# Story: 138.19, 127.559, 127.561
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -107,8 +107,10 @@ f=main():i64{
   <0
 };
 EOF
-if ! "${TKC}" --out "${WORK}/netprobe" "${WORK}/netprobe.tk" >"${WORK}/build.log" 2>&1; then
-    echo "  FAIL: probe did not build"; sed 's/^/      | /' "${WORK}/build.log" | head -5; exit 1
+brc=0
+tk_build "${TKC}" --out "${WORK}/netprobe" "${WORK}/netprobe.tk" >"${WORK}/build.log" 2>&1 || brc=$?
+if [ "${brc}" -ne 0 ]; then
+    echo "  FAIL: probe did not build: $(tk_build_failed "${brc}")"; sed 's/^/      | /' "${WORK}/build.log" | head -5; exit 1
 fi
 P="${WORK}/netprobe"
 
@@ -143,15 +145,44 @@ run "3 ws.connect 127.0.0.1:48113 under connect:127.0.0.0/8" admit "${P}" connec
 # 4 direction
 run "4a listen under a connect-only grant" deny "${P}" avail 48115 --allow-net=connect:127.0.0.1:48115
 run "4b connect under a listen-only grant" deny "${P}" connect ws://127.0.0.1:48115/ --allow-net=listen:127.0.0.1:48115
-# 5 listen + accept
-rm -f "${WORK}/acc.out"
+# 5 listen + accept.  The client connects once the server is listening, and
+# the wait is for that event, not for a time (127.561).  The event is the
+# listening socket itself: the server's "listening" line cannot be watched,
+# because its stdout is a file and is flushed only at exit.  The client
+# retries a refused connect every 0.1 s until one is accepted by the kernel
+# (the server is listening) or the server has exited without that (a failed
+# listen, a crash, or tk_run's hang guard, TK_CONFORM_RUN_SECS, killing a
+# server that never got there).  So a server that starts late under host
+# load still passes, and one that never listens fails by name.  (Until
+# 127.561 the client waited 5 s for the line -- always the full 5 s -- and
+# then connected once; a server not yet listening was refused and then
+# waited in accept until the hang guard killed it.)
+: >"${WORK}/acc.out"
 ( tk_run "${P}" accept 127.0.0.1:48116 --allow-net=listen:127.0.0.1:48116 \
     >"${WORK}/acc.out" 2>"${WORK}/acc.err" ) &
 SRV_PID=$!
-for _ in $(seq 50); do /usr/bin/grep -a -q "^listening" "${WORK}/acc.out" 2>/dev/null && break; sleep 0.1; done
-python3 -I -c 'import socket,sys; s=socket.create_connection(("127.0.0.1",48116),3); s.close()' 2>/dev/null
+crc=0
+python3 -I -c '
+import os, socket, sys, time
+pid = int(sys.argv[1])
+while True:
+    try:
+        socket.create_connection(("127.0.0.1", 48116), 30).close()
+        sys.exit(0)
+    except OSError:
+        pass
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        sys.exit(3)
+    time.sleep(0.1)
+' "${SRV_PID}" 2>/dev/null || crc=$?
 wait "${SRV_PID}" 2>/dev/null; arc=$?; SRV_PID=""
-if [ "${arc}" -eq 0 ] && /usr/bin/grep -a -q "accept-done true" "${WORK}/acc.out"; then
+if [ "${crc}" -ne 0 ]; then
+    fail "5 net.listen + net.accept: the server exited without listening on 127.0.0.1:48116 (rc=$(tk_rc "${arc}"))"
+    sed 's/^/      | /' "${WORK}/acc.out" "${WORK}/acc.err" | head -4
+elif [ "${arc}" -eq 0 ] && /usr/bin/grep -a -q "^listening true" "${WORK}/acc.out" \
+     && /usr/bin/grep -a -q "accept-done true" "${WORK}/acc.out"; then
     pass "5 net.listen + net.accept under listen:127.0.0.1:48116: $(tr '\n' ' ' <"${WORK}/acc.out")"
 else
     fail "5 net.listen + net.accept: rc=$(tk_rc "${arc}")"; sed 's/^/      | /' "${WORK}/acc.out" "${WORK}/acc.err" | head -4

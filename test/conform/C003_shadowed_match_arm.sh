@@ -24,7 +24,7 @@
 #
 # Every case compiles and RUNS at -O0..-O3 and asserts stdout.
 #
-# Story: 127.71, 127.559
+# Story: 127.71, 127.559, 127.561
 
 set -uo pipefail
 
@@ -58,8 +58,10 @@ run_case() {
     for o in -O0 -O1 -O2 -O3; do
         local out rc=0
         rm -f case_bin
-        if ! "${TKC}" --allow-all "${o}" --out case_bin case.tk >compile.log 2>&1; then
-            echo "  FAIL: ${name} ${o}: compile failed"
+        local brc=0
+        tk_build "${TKC}" --allow-all "${o}" --out case_bin case.tk >compile.log 2>&1 || brc=$?
+        if [ "${brc}" -ne 0 ]; then
+            echo "  FAIL: ${name} ${o}: compile failed ($(tk_build_failed "${brc}"))"
             sed 's/^/      /' compile.log | head -6
             FAIL=$((FAIL + 1))
             continue
