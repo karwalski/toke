@@ -18,7 +18,7 @@
 # These cases compile and RUN, at every optimisation level, and assert the
 # observed stdout.  A regression here is a crash, not a wrong string.
 #
-# Story: 127.64, 127.559
+# Story: 127.64, 127.559, 127.561
 
 set -uo pipefail
 
@@ -53,8 +53,10 @@ run_case() {
     for o in -O0 -O1 -O2 -O3; do
         local out rc=0
         rm -f "case_bin"
-        if ! "${TKC}" --allow-all "${o}" --out "case_bin" "case.tk" >compile.log 2>&1; then
-            echo "  FAIL: ${name} ${o}: compile failed"
+        local brc=0
+        tk_build "${TKC}" --allow-all "${o}" --out "case_bin" "case.tk" >compile.log 2>&1 || brc=$?
+        if [ "${brc}" -ne 0 ]; then
+            echo "  FAIL: ${name} ${o}: compile failed ($(tk_build_failed "${brc}"))"
             sed 's/^/      /' compile.log
             FAIL=$((FAIL + 1))
             continue

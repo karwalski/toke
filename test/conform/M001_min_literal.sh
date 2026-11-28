@@ -11,7 +11,7 @@
 #   4. `tkc --min a.tk b.tk` prints one line per file, in order, does not
 #      fall through to the compile pipeline, and leaves no stray binary.
 #
-# Stories: 131.34, 131.36, 127.559
+# Stories: 131.34, 131.36, 127.559, 127.561
 
 set -euo pipefail
 
@@ -53,20 +53,25 @@ cd "${WORK}"
 printf 'm=minlit;\ni=io:std.io;\nf=main():i64{\n  let a="name,age\nalice,30\nbob,25";\n  let b="tab\there";\n  let c="cr\rx";\n  let d="bs\\\\\nq";\n  let e="q\\"\nz";\n  let g="\\(1+\n2) end";\n  io.println(a);io.println(b);io.println(c);io.println(d);io.println(e);io.println(g);\n  <0\n};\n' > orig.tk
 
 # ── 1. one line ──────────────────────────────────────────────────────────────
-"${TKC}" --min orig.tk > min.tk
+# (every tkc and program run is under its hang guard, 127.561: a step that
+# fails or hangs stops the case and says which step, and how)
+rc=0; tk_run "${TKC}" --min orig.tk > min.tk || rc=$?
+[ "${rc}" -eq 0 ] || { echo "  FAIL: tkc --min orig.tk: rc $(tk_rc "${rc}")"; exit 1; }
 check "minified output is one line" "1" "$(wc -l < min.tk | tr -d ' ')"
 check "raw newline re-emitted as the \\n escape" "1" "$(grep -cF 'name,age\nalice,30\nbob,25' min.tk | tr -d ' ')"
 
 # ── 2. round-trip: identical program output ──────────────────────────────────
-"${TKC}" orig.tk --out orig_bin >/dev/null 2>&1
-"${TKC}" min.tk  --out min_bin  >/dev/null 2>&1
+for t in orig min; do
+    rc=0; tk_build "${TKC}" "${t}.tk" --out "${t}_bin" >"${t}_build.log" 2>&1 || rc=$?
+    [ "${rc}" -eq 0 ] || { echo "  FAIL: build ${t}.tk: $(tk_build_failed "${rc}")"; sed 's/^/      /' "${t}_build.log" | head -4; exit 1; }
+done
 ORIG_OUT="$(tk_run ./orig_bin | od -c)"
 MIN_OUT="$(tk_run ./min_bin  | od -c)"
 check "compiled output byte-identical (orig vs --min)" "${ORIG_OUT}" "${MIN_OUT}"
 check "original prints 10 lines (raw newlines preserved)" "10" "$(tk_run ./orig_bin | wc -l | tr -d ' ')"
 
 # ── 3. idempotent ────────────────────────────────────────────────────────────
-check "min(min(p)) == min(p)" "$(cat min.tk)" "$("${TKC}" --min min.tk)"
+check "min(min(p)) == min(p)" "$(cat min.tk)" "$(tk_run "${TKC}" --min min.tk)"
 
 # ── 4. multi-file --min ──────────────────────────────────────────────────────
 printf 'm=a;f=main():i64{<0};\n' > a.tk

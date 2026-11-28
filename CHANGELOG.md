@@ -416,6 +416,25 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   settings live in `test/conform_timing.sh`, a small file the scripts
   source. No C code changed.
 
+- **The last two waits sized for an idle host, and the last unguarded runs, are gone**
+  (127.561). C1881 case 5 waited 5 s for the accept server's `listening`
+  line and then connected once. The line is never seen before the server
+  exits, because its stdout is a file and is flushed only at exit, so the
+  wait always took the full 5 s, and a server not yet listening by then was
+  refused and sat in `accept` until the 120 s hang guard killed it (seen at
+  load 247). The client now retries the connect every 0.1 s until the
+  server is listening or has exited. A server that starts late still passes,
+  and one that never listens fails with "the server exited without listening"
+  and its exit status (rc 142 when the hang guard killed it). C2285 no longer
+  asserts that each case finishes in under 5 s. The property under test is
+  termination: the program printing its result with the exact output lengths
+  and exiting 0 proves that, and a hang is still caught by the hang guard by
+  name. The elapsed time is printed, not checked. The `tkc --min` and build
+  steps in M001, cases 2 and 3 of C585 (`--compress-stream`, `--decompress`),
+  the compile steps in C002-C005, C048, C1881 and C2285, and C048's
+  `tkc --check` now run under `tk_build` / `tk_run`, and a build that times out
+  says so. No C code changed.
+
 - **`make fuzz-smoke` fails on an input that never returns, instead of hanging**
   (127.545). Each replayed input now has `FUZZ_REPLAY_TIMEOUT` seconds (default 25,
   `0` turns it off): the standalone driver arms an alarm per input and exits 70 with
