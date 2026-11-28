@@ -6,7 +6,7 @@ order: 24
 ---
 
 **Date:** 2026-11-28
-**Status:** **Proposed.** Written for the owner to accept, amend or reject. No compiler, runtime or grammar change ships with this ADR, and none may land before it is accepted. Where this text says "decision" it means the proposed decision. The questions in the last section are the owner's and are not decided here.
+**Status:** **Accepted 2026-11-28** (owner rule 2026-11-28: decide by toke's design principles in docs/about/design.md over prior decisions, existing code or the easier path; the seven questions are resolved in the last section, "Owner resolutions"). Where the body says "proposed", read "decided", except where a resolution below changes it.
 **Deciders:** Matthew Watt (pending)
 **Stories:** 127.553 (the `sc` / `spawn` construct) and 127.554 (typed task results), under the owner decision of 2026-11-28 recorded in both tracker rows, which supersedes D4=B (story 10.3.11, 2026-04-04) for concurrency. Related: 127.548 (the C-ABI adapters for function values), 127.549 (task.spawn and the keyword through those adapters; E4081), 138.47 (scope handles looked up, not read), 127.101 / 127.109 (per-thread error slot and error box), 124.0c (closure environment counting), ADR-0006 (array copy-on-write), ADR-0016 (the `{arena}` block, proposed), `docs/spec/memory-model.md` §3.
 
@@ -124,7 +124,7 @@ f=main():i64{
 ### D3. Errors from tasks
 
 1. **A fallible task's error is its result.** For `f=load(p:str):$doc!$ioerr`, `sc load(p)` has type `sc():$doc!$ioerr`, and `h()` is a `$doc!$ioerr`. It is unwrapped like any union: `h()!`, `mt h(){..}`, or a `let r=h();` that is later matched. Using it as a `$doc` is E4031, the existing rule (semantics.md §5.1). The error reaches the reader with its payload, as if the reader had made the call.
-2. **A fallible task's result must be read.** It is E4084 when `sc` starts a call whose type is an error union and the handle is not read in the block: the task stands as a statement, or it is bound and no `h()` of that binding (or of an element of the collection it was put in) appears in the block. The rule is flow-insensitive, like the union-consumption rule of 127.323 (semantics.md §5.1). A read on one branch satisfies it. That is the price of a rule the checker can decide without path analysis (Q5). No `fix`: whether the read should be `!` or `mt` is the program's choice.
+2. **A fallible task's result must be read.** It is E4084 when `sc` starts a call whose type is an error union and the handle is not read in the block: the task stands as a statement, or it is bound and no `h()` of that binding (or of an element of the collection it was put in) appears in the block. *Superseded by owner resolution 5: the handle must be read on every path through the block.* (As first proposed: the rule was flow-insensitive, like the union-consumption rule of 127.323 (semantics.md §5.1), and a read on one branch satisfied it.) No `fix`: whether the read should be `!` or `mt` is the program's choice.
 3. **The scope does not fail by itself.** An error that is never read is not raised at the block's exit. E4084 makes "never read" a compile error instead, so an error cannot vanish without the source saying so. An implicit raise at `}` would be hidden control flow and would pick one error among several by timing.
 4. **`!` inside the block** returns the error after the join (D2.1). Tasks still running when it fires run to completion first.
 5. **Cancellation: none.** Every task started runs to completion exactly once. There is no cancellation on the first error, on early exit or by request.
@@ -271,12 +271,14 @@ Stories for the main thread to file. Every one is blocked on the acceptance of t
 - **Cancellation on first error** (Trio, Kotlin, errgroup) or on early exit (D3.5).
 - **Per-type accessors** (`task.resultstr` and so on), rejected by the owner decision on 127.554.
 
-## Questions for the owner
+## Owner resolutions (2026-11-28)
 
-1. **The task word (D1).** Accept `sc E` for starting a task and `sc():T` for the handle type (proposed), or keep `spawn`? Keeping it means a 15th reserved word, which changes the canonical keyword fact, or keeping today's context-sensitive identifier.
-2. **The operand (D1, D4.2).** Accept the call form `sc f(x)` (proposed; E4081 retires and E4085 is added), or keep the function-value form `sc &f` / closure, where E4081 keeps its meaning and arguments need a closure?
-3. **Cancellation (D3.5).** Confirm "none". The alternative is cancel-on-first-error, which skips unstarted tasks nondeterministically.
-4. **Confinement (D4.3).** Confirm that handles can be neither passed nor captured, which gives up a task waiting on a sibling's handle in exchange for a lexical rule and freed descriptors.
-5. **Unread errors (D3.2).** Accept E4084's flow-insensitive "read somewhere in the block", or require a read on every path, which needs path analysis the checker does not do today?
-6. **Rollout (D7).** Make `std.task` an error at once (proposed, per "withdrawn"), or give it one release as a warning?
-7. **Interleaved effects (D2.2).** Is "side effects of concurrent tasks interleave in an unspecified order" acceptable as the stated semantics, or should the language constrain effects inside tasks (for example a lint on output from a task)?
+Each question is resolved by the design principle that decides it (docs/about/design.md: "where any implementation decision conflicts with a design principle, the principle takes precedence over convenience").
+
+1. **The task word: `sc`.** `sc f(x)` starts a task and `sc():T` is the handle type. `spawn` is not kept: a context-sensitive word breaks "no production needs semantic context" (Backtrack-free Grammar), and a 15th reserved word would cost tokens and change a canonical fact. The keyword count stays 14.
+2. **The operand: the call form `sc f(x)`.** One form, no closure needed to pass arguments, and the arguments are evaluated visibly on the starting thread. E4081 retires and E4085 is added, as proposed.
+3. **Cancellation: none.** Cancel-on-first-error would make results depend on timing; every operation has a defined result (Explicit Everything).
+4. **Confinement: confirmed.** Handles can be neither passed nor captured, so the compiler can verify every join lexically.
+5. **Unread errors: a read on every path (changes D3.2).** design.md (Structured Error Handling): "The compiler enforces that every error path is handled explicitly." E4084 therefore requires the handle of a fallible task to be read on every path through its block, not merely somewhere in it; the checker gains the path analysis this needs (stage S3). The flow-insensitive union-consumption rule of 127.323 that D3.2 cites falls short of the same principle; aligning it is a separate story, not a reason to weaken E4084.
+6. **Rollout: an error at once.** `std.task` is withdrawn; E2038 makes its use an error immediately and drives the migration (toke is young: break and fix forward).
+7. **Interleaved effects: accepted, and stated.** The side effects of concurrent tasks interleave in an unspecified order; each single output write is atomic (no torn line), and the spec amendment (S1) states both. No lint on output from tasks.
