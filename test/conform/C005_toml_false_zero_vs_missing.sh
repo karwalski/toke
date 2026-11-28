@@ -36,7 +36,7 @@
 # silent, showing up only as an error that stops being reported.  Cases 4 and 5
 # below are that guard.
 #
-# Story: 127.67, 127.559
+# Story: 127.67, 127.559, 127.561
 
 set -uo pipefail
 
@@ -68,8 +68,10 @@ run_case() {
     printf '%s\n' "${src}" > case.tk
     local out rc=0
     rm -f case_bin
-    if ! "${TKC}" --allow-all --out case_bin case.tk >compile.log 2>&1; then
-        echo "  FAIL: ${name}: compile failed"
+    local brc=0
+    tk_build "${TKC}" --allow-all --out case_bin case.tk >compile.log 2>&1 || brc=$?
+    if [ "${brc}" -ne 0 ]; then
+        echo "  FAIL: ${name}: compile failed ($(tk_build_failed "${brc}"))"
         sed 's/^/      /' compile.log | head -6
         FAIL=$((FAIL + 1))
         return

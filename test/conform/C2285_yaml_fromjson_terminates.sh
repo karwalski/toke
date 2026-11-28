@@ -23,23 +23,34 @@
 # before converts to exactly the same text.
 #
 # WHAT IS ASSERTED (toke programs, each under tk_run's hang guard,
-# TK_CONFORM_RUN_SECS, 127.559):
+# TK_CONFORM_RUN_SECS, 127.559; builds under tk_build's, 127.561):
 #   1. yaml.fromjson / yaml.tojson / yaml.dec+str of the fuzz artifact, of a
 #      sequence nested 400 deep (past the depth cap), of `{"b":[1,2@]}` and
 #      `[1@]`, and of a 60 KiB sequence of 30,000 elements ending in '@':
-#      each returns, with the expected output length, in < 5 s wall.
+#      each returns, exit 0, with the exact expected output lengths.
 #   2. controls that must convert exactly as before (text taken from base
 #      eca5062f): `{"a":1,"b":[1,2]}`, `[1,[2,3],{"k":"v"}]`, `{}`, `[]`, and
 #      the elided elements `[1,,2]`, `{"a":,"b":1}`, `[[1,,2],3]`, and
 #      empty values on a closer, `[{"a":},1]`, `{"x":{"a":},"y":1}`,
 #      `[{"a": }, {"b":3}]`, `[[{"a":],2]` (text taken from v3.2.0).
 #
+# WHY NO WALL-CLOCK BOUND (127.561).  Until 127.561 case 1 also asserted
+# "< 5 s wall".  The property under test is termination: the defect never
+# returned.  The program's own report proves it deterministically -- it
+# printed its line and exited 0, which a looping conversion cannot do -- and
+# the exact lengths prove the output is bounded (fj=120002 for 60003 input
+# bytes; the broken loop grows without limit).  The 5 s bound added nothing
+# to that: a wall clock cannot tell linear work from quadratic, only a fast
+# host from a slow one.  So a hang is caught by the hang guard, which names
+# itself (rc 142), and the elapsed time is printed, not asserted.
+#
 # Negative control: C2285_STDLIB=<dir> builds against another tree's
 # src/stdlib (its ../../stdlib must hold the .tki files).  The v3.2.0 tree
-# (~/tk/tmpwork/wt_toke320) and base eca5062f fail every case in 1 (alarm)
-# and pass every control.
+# (~/tk/tmpwork/wt_toke320) and base eca5062f fail every case in 1 (rc 142)
+# and pass every control (with TK_CONFORM_RUN_SECS=5 the hang guard fires
+# after 5 s, instead of 120 s of an ever-growing heap per case).
 #
-# Story: 127.542, 127.559
+# Story: 127.542, 127.559, 127.561
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -80,13 +91,14 @@ f=main():i64{
   <0
 };
 TOKE
-if ! "${TKC}" --out p p.tk > p.log 2>&1; then
-    fail "compile"; head -8 p.log | sed 's/^/        /'
+brc=0; tk_build "${TKC}" --out p p.tk > p.log 2>&1 || brc=$?
+if [ "${brc}" -ne 0 ]; then
+    fail "compile: $(tk_build_failed "${brc}")"; head -8 p.log | sed 's/^/        /'
     echo "C2285: ${PASS} passed, ${FAIL} failed"; exit 1
 fi
 
-# run <name> <file> <want>: the program must print <want> under the hang
-# guard, and within 5 s wall.
+# run <name> <file> <want>: the program must print <want> and exit 0 under
+# the hang guard.  The elapsed time is reported, not asserted (see above).
 run() {
     local t0 t1 got rc
     t0=$(perl -MTime::HiRes=time -e 'printf "%.3f", time')
@@ -97,10 +109,8 @@ run() {
         fail "$1: no result (exit $(tk_rc "${rc}")) after ${dt} s"
     elif [ "${got}" != "$3" ]; then
         fail "$1: output differs"; printf '        got:  %s\n        want: %s\n' "${got}" "$3"
-    elif perl -e "exit !($t1 - $t0 < 5)"; then
-        pass "$1 (${dt} s): ${got}"
     else
-        fail "$1: took ${dt} s (bound 5 s)"
+        pass "$1 (${dt} s): ${got}"
     fi
 }
 
@@ -188,8 +198,9 @@ y: 1
   -
     a:
 - 2'
-if ! "${TKC}" --out c c.tk > c.log 2>&1; then
-    fail "controls: compile"; head -8 c.log | sed 's/^/        /'
+brc=0; tk_build "${TKC}" --out c c.tk > c.log 2>&1 || brc=$?
+if [ "${brc}" -ne 0 ]; then
+    fail "controls: compile: $(tk_build_failed "${brc}")"; head -8 c.log | sed 's/^/        /'
 else
     # (trailing blanks stripped: "b: " and "- " end in a space)
     got="$(tk_run ./c 2>&1 | sed 's/ *$//')"
