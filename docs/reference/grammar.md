@@ -354,7 +354,7 @@ Inside function bodies, `m`, `f`, `t`, `i` are valid variable names.
 | `rt` | Return (long form) | `rt expr;` |
 | `as` | Type cast | `x as f64` |
 | `mt` | Match expression | `mt expr {...}` |
-| `sc` | Scope block (structured concurrency) | reserved in the lexer; specified for v0.5 |
+| `sc` | Structured concurrency: scope block, task, handle type | `sc{let h=sc work(x);n=h();}` (semantics.md §7.1; implementation 127.569-127.572) |
 
 ---
 
