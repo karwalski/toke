@@ -39,10 +39,11 @@
 # lockless cases write the rotated file; the two locked pre-fork modes pass
 # (they followed the rename already).
 #
-# Story: 121.53
+# Story: 121.53, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${C603_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 PASS=0; FAIL=0
@@ -107,12 +108,8 @@ rotate() {
     fi
     ./srv_bin "${mode}" "${d}/logs/access.log" > "${d}/out" 2> "${d}/err" &
     SRV=$!
-    for _ in $(seq 1 80); do
-        port="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' "${d}/err" | head -1)"
-        [ -n "${port}" ] && break
-        kill -0 "${SRV}" 2>/dev/null || break
-        sleep 0.1
-    done
+    tk_wait_until "${SRV}" tk_listening "${d}/err"
+    port="$(tk_listening_port "${d}/err")"
     local why=""
     if [ -z "${port}" ]; then
         why="server did not start: $(head -2 "${d}/err" | tr '\n' ' ')"

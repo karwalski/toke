@@ -24,12 +24,13 @@
 # with TKC pointing at a compiler whose stdlib dir holds main's
 # tk_web_glue.c -- every escape case answers 200.
 #
-# Story: 121.18
+# Story: 121.18, 127.565
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 CC="${CC:-cc}"
 S="${C462_STDLIB:-${REPO_ROOT}/src/stdlib}"
@@ -89,12 +90,8 @@ EOF
         "${WORK}/srv.bin" >/dev/null 2>"${WORK}/srv.err" &
         SRV=$!
         PORT=""
-        for _ in $(seq 1 80); do
-            PORT="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' "${WORK}/srv.err" | head -1)"
-            [ -n "${PORT}" ] && break
-            kill -0 "${SRV}" 2>/dev/null || break
-            sleep 0.1
-        done
+        tk_wait_until "${SRV}" tk_listening "${WORK}/srv.err"
+        PORT="$(tk_listening_port "${WORK}/srv.err")"
         if [ -z "${PORT}" ]; then
             fail "servedir server never came up"
         else

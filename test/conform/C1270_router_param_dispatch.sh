@@ -58,10 +58,11 @@
 #   next request's (router_serve's static path buffer).
 # Measured on this branch: 19 passed (14 C + 5 toke).
 #
-# Story: 127.343
+# Story: 127.343, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 CC="${CC:-cc}"
 S="${C1270_STDLIB:-${REPO_ROOT}/src/stdlib}"
@@ -251,12 +252,8 @@ if ! "${TKC}" --diag-text --allow-all --out srv srv.tk > srv.log 2>&1; then
 else
     TK_STR_VERIFY=1 ./srv >/dev/null 2>srv.err & SRV=$!
     PORT=""
-    for _ in $(seq 1 100); do
-        PORT="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' srv.err | head -1)"
-        [ -n "${PORT}" ] && break
-        kill -0 "${SRV}" 2>/dev/null || break
-        sleep 0.1
-    done
+    tk_wait_until "${SRV}" tk_listening srv.err
+    PORT="$(tk_listening_port srv.err)"
     if [ -z "${PORT}" ]; then
         fail "toke: the server did not start: $(head -3 srv.err)"
     else

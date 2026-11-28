@@ -36,10 +36,11 @@
 # NULL for every host (measured), cases 1-5 read "*" and case 8 starts a
 # server on all interfaces (killed after 3 s: 137) -- 2 passed, 7 failed.
 #
-# Story: 138.1
+# Story: 138.1, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${C277_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 PASS=0; FAIL=0
@@ -107,18 +108,11 @@ serve() {
     local name="$1" mode="$2" host="$3" scheme="$4" want="$5" port="" addr="" body=""
     ./srv_bin "${mode}" "${host}" > "${name}.out" 2> "${name}.err" &
     SRV=$!
-    for _ in $(seq 1 80); do
-        port="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' "${name}.err" | head -1)"
-        [ -n "${port}" ] && break
-        kill -0 "${SRV}" 2>/dev/null || break
-        sleep 0.1
-    done
+    tk_wait_until "${SRV}" tk_listening "${name}.err"
+    port="$(tk_listening_port "${name}.err")"
     if [ -n "${port}" ]; then
-        for _ in $(seq 1 40); do
-            body="$(curl -sk --max-time 2 "${scheme}://127.0.0.1:${port}/ok" 2>/dev/null)"
-            [ "${body}" = ok ] && break
-            sleep 0.1
-        done
+        says_ok() { body="$(curl -sk --max-time 2 "${scheme}://127.0.0.1:${port}/ok" 2>/dev/null)"; [ "${body}" = ok ]; }
+        tk_wait_until "${SRV}" says_ok
         addr="$(bound "${SRV}" "${port}")"
     fi
     stop "${SRV}"; SRV=""
