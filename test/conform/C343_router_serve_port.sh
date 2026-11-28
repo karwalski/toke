@@ -22,10 +22,11 @@
 # Against main (18b9f73) both fail: port 0 reports nothing (it serves on
 # 8080), and port 70000 does not return (it serves on 8080).
 #
-# Story: 135.26 (item 2)
+# Story: 135.26 (item 2), 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${C343_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 PASS=0; FAIL=0
@@ -64,7 +65,7 @@ fi
 # ── 1. port 0 ───────────────────────────────────────────────────────────
 ./rs_bin 0 > s0.out 2> s0.err &
 SRV=$!
-for _ in $(seq 1 50); do grep -q 'server_listening' s0.err 2>/dev/null && break; sleep 0.1; done
+tk_wait_until "${SRV}" tk_listening s0.err
 PORT="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9]*\)$/\1/p' s0.err | head -1)"
 if [ -n "${PORT}" ] && [ "${PORT}" != "8080" ]; then
     BODY="$(python3 -c "

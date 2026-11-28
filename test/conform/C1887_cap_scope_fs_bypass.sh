@@ -59,10 +59,11 @@
 #
 # Port: 127.0.0.1:48215 (batch Z215's range), stopped by PID.
 #
-# Story: 138.19
+# Story: 138.19, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 PORT="${C1887_PORT:-48215}"
 PASS=0; FAIL=0
@@ -256,10 +257,8 @@ serve_leak() {
     ( cd "${G}" && exec "${PG}" serve "$@" --allow-net ) >"${WORK}/so" 2>"${WORK}/se" &
     SRVPID=$!
     local body="" code=""
-    for _ in $(seq 1 50); do
-        code="$(curl -s -o "${WORK}/body" -w '%{http_code}' "http://127.0.0.1:${PORT}/leak" 2>/dev/null)" && [ "${code}" != 000 ] && break
-        sleep 0.1
-    done
+    leak_answered() { code="$(curl -s --max-time 5 -o "${WORK}/body" -w '%{http_code}' "http://127.0.0.1:${PORT}/leak" 2>/dev/null)" && [ "${code}" != 000 ]; }
+    tk_wait_until "${SRVPID}" leak_answered
     kill "${SRVPID}" 2>/dev/null; wait "${SRVPID}" 2>/dev/null; SRVPID=""
     echo "${code}"
 }

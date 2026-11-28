@@ -21,10 +21,11 @@
 # (its stdlib/*.tki beside it, as `git archive main src/stdlib stdlib` gives);
 # main's connects with no grant (4 connections, exit 0).
 #
-# Story: 121.42
+# Story: 121.42, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 S="${C545_STDLIB:-${REPO_ROOT}/src/stdlib}"
 PASS=0; FAIL=0
@@ -51,7 +52,7 @@ while True:
     open(sys.argv[2], "w").write(str(n)); c.close()
 EOF
 python3 l.py port count & LPID=$!
-for _ in $(seq 1 50); do [ -s port ] && break; sleep 0.1; done
+tk_wait_until "${LPID}" tk_nonempty port
 PORT="$(cat port 2>/dev/null)"
 [ -n "${PORT}" ] || { fail "listener did not start"; echo "C545: ${PASS} passed, ${FAIL} failed"; exit 1; }
 

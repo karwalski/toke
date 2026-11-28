@@ -29,10 +29,11 @@
 # ClientHello where a CONNECT should be).  With the tunnel moved but the
 # reply still read by one recv() (measured), case 2 fails.
 #
-# Story: 135.26
+# Story: 135.26, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${C341_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 PASS=0; FAIL=0
@@ -160,8 +161,8 @@ start() {
     local name=$1; shift
     rm -f "${name}.port"
     "$@" > "${name}.port" 2> "${name}.err" &
-    PIDS="${PIDS} $!"
-    for _ in $(seq 1 50); do [ -s "${name}.port" ] && break; sleep 0.1; done
+    local pid=$!; PIDS="${PIDS} ${pid}"
+    tk_wait_until "${pid}" tk_nonempty "${name}.port"
     PORT="$(head -1 "${name}.port")"
 }
 

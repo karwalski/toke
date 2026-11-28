@@ -33,10 +33,11 @@
 # forged program exits 139 (routerforged hangs serving a forged router, so
 # the script stops it).
 #
-# Stories: 138.63
+# Stories: 138.63, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 PORT=48247
 PASS=0; FAIL=0
@@ -240,11 +241,7 @@ if ! "${TKC}" -o srv srv.tk > srv.log 2>&1; then
 else
     ./srv --allow-all >/dev/null 2>srv.err & SRV=$!
     up=""
-    for _ in $(seq 1 100); do
-        curl -s --max-time 1 -o /dev/null "http://127.0.0.1:${PORT}/keep" 2>/dev/null && { up=1; break; }
-        kill -0 "${SRV}" 2>/dev/null || break
-        sleep 0.1
-    done
+    tk_wait_until "${SRV}" curl -s --max-time 1 -o /dev/null "http://127.0.0.1:${PORT}/keep" && up=1
     if [ -z "${up}" ]; then
         fail "srv: the server did not start on 127.0.0.1:${PORT}: $(head -3 srv.err)"
     else

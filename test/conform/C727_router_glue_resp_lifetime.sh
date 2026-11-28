@@ -50,10 +50,11 @@
 # program now gets 500 on its second request and must build its response
 # per request or before router.serve.  On this branch: 18 passed.
 #
-# Story: 121.93
+# Story: 121.93, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 CC="${CC:-cc}"
 S="${C727_STDLIB:-${REPO_ROOT}/src/stdlib}"
@@ -313,12 +314,8 @@ if ! "${TKC}" --diag-text --allow-all --out srv srv.tk > srv.log 2>&1; then
 else
     ./srv >/dev/null 2>srv.err & SRV=$!
     PORT=""
-    for _ in $(seq 1 100); do
-        PORT="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' srv.err | head -1)"
-        [ -n "${PORT}" ] && break
-        kill -0 "${SRV}" 2>/dev/null || break
-        sleep 0.1
-    done
+    tk_wait_until "${SRV}" tk_listening srv.err
+    PORT="$(tk_listening_port srv.err)"
     if [ -z "${PORT}" ]; then
         fail "the toke server did not start: $(head -3 srv.err)"
     else

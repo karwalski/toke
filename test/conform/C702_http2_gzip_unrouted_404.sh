@@ -39,10 +39,11 @@
 # Against main's src/stdlib the HTTP/2 --compressed case is unencoded, and
 # every PUT/DELETE/POST-to-unrouted case is 405.
 #
-# Story: 121.87
+# Story: 121.87, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 S="${C702_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 export TKC_STDLIB_DIR="${S}"
@@ -89,12 +90,8 @@ fi
 start() {   # start MODE -> sets PORT, SRV
     ./srv_bin "$1" > out.log 2> err.log &
     SRV=$!; PORT=""
-    for _ in $(seq 1 80); do
-        PORT="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' err.log | head -1)"
-        [ -n "${PORT}" ] && break
-        kill -0 "${SRV}" 2>/dev/null || break
-        sleep 0.1
-    done
+    tk_wait_until "${SRV}" tk_listening err.log
+    PORT="$(tk_listening_port err.log)"
 }
 
 H2CURL=""

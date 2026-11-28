@@ -33,10 +33,11 @@
 # absent: 0/9).  With C708_NO_INSECURE=1 main scores 4/9 -- cases 3, 4, 5, 8
 # and 9 all connect (ok): main verifies nothing.
 #
-# Story: 121.64
+# Story: 121.64, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 PASS=0; FAIL=0
 if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
@@ -102,8 +103,9 @@ PY
 start() {   # start NAME -> sets PORT_<NAME>
     # a subshell keeps the server out of this shell's job table, so killing
     # it at exit prints no "Terminated" line
-    PIDS="${PIDS} $( (python3 srv.py "$1.crt" "$1.key" > "$1.port" 2>/dev/null & echo $!) )"
-    for _ in $(seq 1 50); do [ -s "$1.port" ] && break; sleep 0.1; done
+    local pid; pid="$( (python3 srv.py "$1.crt" "$1.key" > "$1.port" 2>/dev/null & echo $!) )"
+    PIDS="${PIDS} ${pid}"
+    tk_wait_until "${pid}" tk_nonempty "$1.port"
     eval "PORT_$1=$(head -1 "$1.port")"
 }
 start good; start other; start old; start self

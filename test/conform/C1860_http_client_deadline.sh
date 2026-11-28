@@ -71,7 +71,7 @@
 # Every program run is under tk_run's hang guard (TK_CONFORM_RUN_SECS) and the
 # builds under tk_build's (TK_CONFORM_BUILD_SECS).
 #
-# Story: 138.24, 127.559
+# Story: 138.24, 127.559, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -147,7 +147,7 @@ while True:
     threading.Thread(target=serve, args=(c,), daemon=True).start()
 PY
 python3 srv.py ports srv.log 2> srv.err & SRV=$!
-for _ in $(seq 1 50); do [ -s ports ] && break; sleep 0.1; done
+tk_wait_until "${SRV}" tk_nonempty ports
 read -r HP MP < ports 2>/dev/null || true
 if [ -z "${HP:-}" ]; then fail "the loopback server did not start: $(head -c 200 srv.err)"; echo "C1860: ${PASS} passed, ${FAIL} failed"; exit 1; fi
 

@@ -19,10 +19,11 @@
 # back on stdlib_tables.c's bare-glue list, 1 of 3 passes: both $err cases
 # print RT005, because the arm binds nil instead of the raised httperr.
 #
-# Story: 121.53
+# Story: 121.53, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 PASS=0; FAIL=0; SRV=""
 if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
@@ -61,7 +62,7 @@ with socketserver.TCPServer(("127.0.0.1", 0), H) as s:
     s.serve_forever()
 EOF
 python3 srv.py > srv.port 2> srv.err & SRV=$!
-for _ in $(seq 1 50); do [ -s srv.port ] && break; sleep 0.1; done
+tk_wait_until "${SRV}" tk_nonempty srv.port
 PORT="$(head -1 srv.port)"
 DEAD="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')"
 

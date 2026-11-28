@@ -40,10 +40,11 @@
 # stdlib tree.  Against main's src/stdlib every curl case fails (HTTP/1.1
 # negotiated) and the idle case fails (h2 not negotiated).
 #
-# Story: 121.80
+# Story: 121.80, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 S="${C697_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 export TKC_STDLIB_DIR="${S}"
@@ -96,12 +97,8 @@ fi
 start() {   # start WORKERS -> sets PORT, SRV
     ./srv_bin "$1" > out.log 2> err.log &
     SRV=$!; PORT=""
-    for _ in $(seq 1 80); do
-        PORT="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' err.log | head -1)"
-        [ -n "${PORT}" ] && break
-        kill -0 "${SRV}" 2>/dev/null || break
-        sleep 0.1
-    done
+    tk_wait_until "${SRV}" tk_listening err.log
+    PORT="$(tk_listening_port err.log)"
 }
 
 # A curl that can negotiate h2: it must list the HTTP2 feature and be built

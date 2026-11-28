@@ -34,12 +34,13 @@
 # of both.  Exact expected values, no counting and no thresholds, so machine
 # load cannot change the result.
 #
-# Story: 127.145
+# Story: 127.145, 127.565
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 
 PASS=0
@@ -116,13 +117,7 @@ PORT="$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));prin
 python3 "${WORK}/wsd.py" "${PORT}" >"${WORK}/wsd.log" 2>&1 &
 WSS=$!
 up=0
-for _ in $(seq 1 80); do
-    python3 -c "
-import socket,sys
-s=socket.socket(); s.settimeout(0.3)
-sys.exit(0 if s.connect_ex(('127.0.0.1',${PORT}))==0 else 1)" && { up=1; break; }
-    sleep 0.25
-done
+tk_wait_until "${WSS}" tk_port_open "${PORT}" && up=1
 if [ "${up}" -ne 1 ]; then
     echo "  FAIL: the loopback WebSocket server never came up"
     sed 's/^/      /' "${WORK}/wsd.log" | head -6

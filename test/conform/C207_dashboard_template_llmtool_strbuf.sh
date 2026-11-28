@@ -32,12 +32,13 @@
 # Negative control: C207_STDLIB=<dir> builds against another stdlib tree; a
 # copy with main's dashboard.c/llm_tool.c FAILs the dashboard and llm checks.
 #
-# Story: 122.13
+# Story: 122.13, 127.565
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 CC="${CC:-cc}"
 S="${C207_STDLIB:-${REPO_ROOT}/src/stdlib}"
 
@@ -198,7 +199,7 @@ fi
 mkdir -p "${WORK}/d"
 python3 "${WORK}/srv.py" "${WORK}" &
 SRV_PID=$!
-for _ in $(seq 1 50); do [ -s "${WORK}/port" ] && break; sleep 0.1; done
+tk_wait_until "${SRV_PID}" tk_nonempty "${WORK}/port"
 if [ ! -s "${WORK}/port" ]; then echo "  FAIL: mock server did not start"; echo "C207: FAIL"; exit 1; fi
 PORT="$(cat "${WORK}/port")"
 

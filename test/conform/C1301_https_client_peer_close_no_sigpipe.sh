@@ -29,11 +29,12 @@
 # that macOS behaviour is unchanged.  The Linux failure it would catch needs
 # a Linux runner (127.346 row).
 #
-# Story: 127.346
+# Story: 127.346, 127.565
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/toke}"
 export TKC_STDLIB_DIR="${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}"
 RUNS="${C1301_RUNS:-12}"
@@ -136,7 +137,7 @@ while True:
     except OSError: pass                 # (wrap_socket took over raw's fd)
 PY
 python3 srv.py c.pem k.pem > srv.port 2> srv.err & SRV=$!
-for _ in $(seq 1 50); do [ -s srv.port ] && break; sleep 0.1; done
+tk_wait_until "${SRV}" tk_nonempty srv.port
 P="$(cat srv.port 2>/dev/null)"
 if [ -z "${P}" ]; then echo "FAIL: the TLS server did not start"; cat srv.err; echo "C1301: ${PASS} passed, $((FAIL + 1)) failed"; exit 1; fi
 python3 -c "open('body.bin','wb').write(b'x' * (8 << 20))"

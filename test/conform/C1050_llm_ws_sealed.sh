@@ -49,10 +49,11 @@
 #     changed in the same commit as llm.c.
 # Measured: this branch 33 passed (25 C + 8 toke).
 #
-# Story: 127.295, 127.331
+# Story: 127.295, 127.331, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 S="${C1050_STDLIB:-${REPO_ROOT}/src/stdlib}"
 export TKC_STDLIB_DIR="${S}"
@@ -104,7 +105,7 @@ s.serve_forever()
 PY
 python3 mock.py > port.txt 2>/dev/null & SRV=$!
 PORT=""
-for _ in $(seq 1 50); do PORT="$(head -1 port.txt 2>/dev/null)"; [ -n "${PORT}" ] && break; sleep 0.1; done
+tk_wait_until "${SRV}" tk_nonempty port.txt; PORT="$(head -1 port.txt 2>/dev/null)"
 [ -n "${PORT}" ] || { fail "mock endpoint did not start"; echo "C1050: ${PASS} passed, ${FAIL} failed"; exit 1; }
 
 # run_c NAME ARGS...: run ./NAME under TK_STR_VERIFY=1; each "ok X" /

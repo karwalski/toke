@@ -65,10 +65,11 @@
 # preflight's "Content-Length: 0"); what passes is the status lines, the
 # first length, the gzip body.  On this branch: 62 passed.
 #
-# Story: 121.97
+# Story: 121.97, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${C730_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 PASS=0; FAIL=0; SRV=""
@@ -120,12 +121,8 @@ build() {
 start() {
     ./"$1" >/dev/null 2>"$1.err" & SRV=$!
     PORT=""
-    for _ in $(seq 1 100); do
-        PORT="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' "$1.err" | head -1)"
-        [ -n "${PORT}" ] && break
-        kill -0 "${SRV}" 2>/dev/null || break
-        sleep 0.1
-    done
+    tk_wait_until "${SRV}" tk_listening "$1.err"
+    PORT="$(tk_listening_port "$1.err")"
 }
 trap 'stop; rm -rf "${WORK}"' EXIT
 stop() { [ -n "${SRV}" ] && { pkill -P "${SRV}" 2>/dev/null; kill "${SRV}" 2>/dev/null; wait "${SRV}" 2>/dev/null; }; SRV=""; }

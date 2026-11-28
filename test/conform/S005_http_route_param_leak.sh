@@ -52,12 +52,13 @@
 # through.  A same-process heap count over a fixed number of requests has
 # neither problem.
 #
-# Story: 127.72
+# Story: 127.72, 127.565
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 CC="${CC:-cc}"
 
 PASS=0
@@ -127,19 +128,9 @@ EOF
     else
         "${WORK}/srv.bin" >/dev/null 2>"${WORK}/srv.err" &
         SRV=$!
-        for _ in $(seq 1 80); do
-            PORT="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' "${WORK}/srv.err" | head -1)"
-            [ -n "${PORT}" ] && break
-            kill -0 "${SRV}" 2>/dev/null || break
-            sleep 0.1
-        done
-        for _ in $(seq 1 80); do
-            python3 -c "
-import socket,sys
-s=socket.socket(); s.settimeout(0.3)
-sys.exit(0 if s.connect_ex(('127.0.0.1',${PORT}))==0 else 1)" && break
-            sleep 0.25
-        done
+        tk_wait_until "${SRV}" tk_listening "${WORK}/srv.err"
+        PORT="$(tk_listening_port "${WORK}/srv.err")"
+        [ -n "${PORT}" ] && tk_wait_until "${SRV}" tk_port_open "${PORT}"
         bad=0
         for w in alpha bravo charlie delta echo; do
             got="$(curl -s --max-time 10 "http://127.0.0.1:${PORT}/api/greet/${w}")"

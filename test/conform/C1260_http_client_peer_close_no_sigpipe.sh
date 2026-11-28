@@ -26,11 +26,12 @@
 # Negative control: C1260_STDLIB=<dir holding 031d72fd's src/stdlib> — see
 # the commit for the measured result.
 #
-# Story: 127.341
+# Story: 127.341, 127.565
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/toke}"
 export TKC_STDLIB_DIR="${C1260_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 RUNS="${C1260_RUNS:-12}"
@@ -63,7 +64,7 @@ while True:
     c.close()                             # the body is still on its way
 PY
 python3 srv.py > srv.port 2> srv.err & SRV=$!
-for _ in $(seq 1 50); do [ -s srv.port ] && break; sleep 0.1; done
+tk_wait_until "${SRV}" tk_nonempty srv.port
 P="$(cat srv.port 2>/dev/null)"
 if [ -z "${P}" ]; then echo "FAIL: the loopback server did not start"; cat srv.err; echo "C1260: 0 passed, 1 failed"; exit 1; fi
 

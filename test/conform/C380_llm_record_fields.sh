@@ -28,10 +28,11 @@
 # C380_STDLIB=<dir> builds against another stdlib tree.  Against main
 # 9f901bf: case 1 prints the base URL and the key.
 #
-# Story: 135.30
+# Story: 135.30, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${C380_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 PASS=0; FAIL=0; SRV=""
@@ -76,7 +77,7 @@ s.serve_forever()
 PY
 python3 mock.py > port.txt 2>/dev/null & SRV=$!
 PORT=""
-for _ in $(seq 1 50); do PORT="$(head -1 port.txt 2>/dev/null)"; [ -n "${PORT}" ] && break; sleep 0.1; done
+tk_wait_until "${SRV}" tk_nonempty port.txt; PORT="$(head -1 port.txt 2>/dev/null)"
 
 cat > p.tk <<TK
 m=p;

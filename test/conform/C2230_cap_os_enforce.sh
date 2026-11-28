@@ -53,10 +53,11 @@
 # 1, 2 (the with-cases), 4, 5, 6 and 7 FAIL.
 #
 # Ports 48230-48234 on 127.0.0.1 only (batch Z261); the server is stopped by PID.
-# Story: 138.44
+# Story: 138.44, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 STDLIB_SRC="${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}"
 PASS=0; FAIL=0; SKIP=0
@@ -250,10 +251,7 @@ if [ "${B_NBOS}" -eq 1 ] && [ "${KNET}" -eq 1 ]; then
         ( cd "${WORK}" && exec python3 -m http.server "${P_SERVER}" --bind 127.0.0.1 ) >/dev/null 2>&1 &
         SRV_PID=$!
         up=0
-        for _ in $(seq 1 50); do
-            if python3 -c "import socket,sys; s=socket.socket(); s.settimeout(0.2); sys.exit(s.connect_ex(('127.0.0.1', ${P_SERVER})))" 2>/dev/null; then up=1; break; fi
-            sleep 0.1
-        done
+        tk_wait_until "${SRV_PID}" tk_port_open "${P_SERVER}" && up=1
         if [ "${up}" -eq 1 ]; then
             expect_out "2m broker removed, no os_enforce: http.geturl to an ungranted port" "geturl-done 1" "${WORK}/nbplain" geturl "http://127.0.0.1:${P_SERVER}/"
             expect_out "2n broker removed, os_enforce: http.geturl to an ungranted port is refused" "geturl-done 2" "${WORK}/nbos" geturl "http://127.0.0.1:${P_SERVER}/"

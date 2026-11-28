@@ -38,10 +38,11 @@
 # stdlib tree.  Against main 73f7466: case 1 dies with SIGSEGV (rc=139), and
 # with only the req.headers/params reads removed, req.body prints binary.
 #
-# Story: 138.18
+# Story: 138.18, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${C360_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 PASS=0; FAIL=0; SRV=""
@@ -134,12 +135,8 @@ if ! "${TKC}" --diag-text --allow-all --out srv srv.tk > srv.log 2>&1; then
 else
     ./srv >/dev/null 2>srv.err & SRV=$!
     PORT=""
-    for _ in $(seq 1 100); do
-        PORT="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' srv.err | head -1)"
-        [ -n "${PORT}" ] && break
-        kill -0 "${SRV}" 2>/dev/null || break
-        sleep 0.1
-    done
+    tk_wait_until "${SRV}" tk_listening srv.err
+    PORT="$(tk_listening_port srv.err)"
     wire() {  # status|x-out|body
         rm -f hdr.txt body.txt; curl -s --max-time 5 -D hdr.txt -o body.txt "$@" >/dev/null 2>&1
         printf '%s|%s|%s' "$(sed -n '1s/^HTTP\/1\.1 \([0-9]*\).*/\1/p' hdr.txt)" \
