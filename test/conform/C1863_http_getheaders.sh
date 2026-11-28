@@ -45,10 +45,11 @@
 # fail ($ok 200 / $ok 400, and the server read Host evil.example and X-Inj
 # for 10); 11 fails at the lookup instead ("TCP connect failed").
 #
-# Story: 138.27
+# Story: 138.27, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${C1863_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 PASS=0; FAIL=0
@@ -105,7 +106,7 @@ srv.serve_forever()
 PY
 python3 rec.py plain.log 48130 > plain.port 2> plain.err & R1=$!
 python3 rec.py tls.log 48135 srv.pem srv.key > tls.port 2> tls.err & R2=$!
-for _ in $(seq 1 50); do [ -s plain.port ] && [ -s tls.port ] && break; sleep 0.1; done
+tk_wait_until "${R1}" tk_nonempty plain.port; tk_wait_until "${R2}" tk_nonempty tls.port
 HP="$(head -1 plain.port)"; SP="$(head -1 tls.port)"
 if [ -z "${HP}" ] || [ -z "${SP}" ]; then echo "  FAIL: the recorders did not start: $(head -c 200 plain.err tls.err)"; echo "C1863: 0 passed, 1 failed"; exit 1; fi
 

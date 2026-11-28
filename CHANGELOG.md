@@ -435,6 +435,25 @@ programs only, never a recommendation, a `--fix` rule or a diagnostic `fix`.
   `tkc --check` now run under `tk_build` / `tk_run`, and a build that times out
   says so. No C code changed.
 
+- **Every conformance case that starts a server waits for it to be ready, not for a fixed time**
+  (127.565). 68 scripts in `test/conform/` waited for a server in a loop like
+  "check 50 times, 0.1 s apart, then go on". When that ran out the case went
+  ahead anyway, so a server that started late under host load (150-250) was
+  refused or caught by the hang guard further down, which is what happened
+  to C1881 case 5. `test/conform_timing.sh` now has one shared helper,
+  `tk_wait_until PID CHECK`. It runs the check every 0.1 s and stops when
+  the check succeeds, when the server exits, or when `TK_CONFORM_RUN_SECS`
+  (120 s) passes. The two failures are named on stderr: "NOT READY: pid N
+  exited (rc R)" and "TIMEOUT ... rc 142". The checks are a port file a
+  helper server has written (`tk_nonempty`), the server's
+  `server_listening` line on stderr (`tk_listening`, `tk_listening_port`),
+  a connect to the port (`tk_port_open`), or a request the server answers.
+  All 79 readiness waits were converted. None of them waited on a toke
+  program's stdout line, which is flushed only at exit (C1881 was the only
+  one, fixed by 127.561). Eighteen other loops wait for a process to exit,
+  for a count to settle, or for a server log line after a request. They are
+  not readiness waits and are unchanged. No C code changed.
+
 - **`make fuzz-smoke` fails on an input that never returns, instead of hanging**
   (127.545). Each replayed input now has `FUZZ_REPLAY_TIMEOUT` seconds (default 25,
   `0` turns it off): the standalone driver arms an alarm per input and exits 70 with

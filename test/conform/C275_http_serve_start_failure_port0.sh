@@ -41,10 +41,11 @@
 # case 3 starts a server on 8080 (or fails to bind it) and case 4 never
 # reports a port.
 #
-# Story: 135.24 (items 1 and 2)
+# Story: 135.24 (items 1 and 2), 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${C275_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 PASS=0; FAIL=0
@@ -116,7 +117,7 @@ s = socket.socket(); s.bind(("", 0)); s.listen(8)
 print(s.getsockname()[1], flush=True)
 time.sleep(3600)' > hold.port &   # killed by stop below / cleanup
 HOLD=$!
-for _ in $(seq 1 50); do [ -s hold.port ] && break; sleep 0.1; done
+tk_wait_until "${HOLD}" tk_nonempty hold.port
 BUSY="$(head -1 hold.port)"
 
 # 1-2. a held port
@@ -150,16 +151,16 @@ if build range "http.serveworkers(70000;1)"; then
 fi
 
 # 4. port 0: a free port, reported, served, and a clean shutdown exits 0
+# answers_ok URL -- GET URL says "ok" (a tk_wait_until check, 127.565)
+answers_ok() { [ "$(curl -s --max-time 2 "$1" 2>/dev/null)" = "ok" ]; }
 if build any "http.serveworkers(0;2)"; then
     ./any_bin > any.out 2> any.err &
     SRV=$!
     PORT=""; up=1
-    for _ in $(seq 1 80); do
-        kill -0 "${SRV}" 2>/dev/null || break
-        [ -n "${PORT}" ] || PORT="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' any.err | head -1)"
-        if [ -n "${PORT}" ] && [ "$(curl -s --max-time 2 "http://127.0.0.1:${PORT}/ok" 2>/dev/null)" = "ok" ]; then up=0; break; fi
-        sleep 0.1
-    done
+    if tk_wait_until "${SRV}" tk_listening any.err; then
+        PORT="$(tk_listening_port any.err)"
+        tk_wait_until "${SRV}" answers_ok "http://127.0.0.1:${PORT}/ok" && up=0
+    fi
     if [ "${up}" -ne 0 ]; then
         echo "  FAIL: serveworkers(0;2) never answered on a reported port (read back: '${PORT}')"
         sed 's/^/        | /' any.err | head -4; FAIL=$((FAIL + 1))

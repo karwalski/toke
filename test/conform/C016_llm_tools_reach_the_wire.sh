@@ -28,8 +28,11 @@
 # supplied and not something read out of the environment.
 #
 # Exit 0 = pass, 1 = fail.
+#
+# Story: 127.565 (the readiness wait)
 
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/conform_timing.sh"
 
 TKC="${TKC:-./toke}"
 STDLIB="${TKC_STDLIB_DIR:-$PWD/src/stdlib}"
@@ -90,21 +93,7 @@ disown "$SRV_PID" 2>/dev/null || true
 
 # wait for the port to answer rather than sleeping a guessed amount
 ready=0
-for _ in $(seq 1 100); do
-    if python3 - "$PORT" <<'PYEOF' 2>/dev/null
-import socket, sys
-s = socket.socket()
-s.settimeout(0.2)
-try:
-    s.connect(("127.0.0.1", int(sys.argv[1])))
-except Exception:
-    sys.exit(1)
-finally:
-    s.close()
-PYEOF
-    then ready=1; break; fi
-    python3 -c 'import time; time.sleep(0.05)'
-done
+tk_wait_until "$SRV_PID" tk_port_open "$PORT" && ready=1
 if [ "$ready" != 1 ]; then
     echo "FAIL harness: fake endpoint never came up on port $PORT"
     cat "$TMP/srv.out"

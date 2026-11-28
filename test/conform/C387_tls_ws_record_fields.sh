@@ -35,10 +35,11 @@
 # config, the connect program dies with SIGSEGV on conn.id, and the ws
 # program prints magic|fd for .id and never clears .ready.
 #
-# Story: 135.30
+# Story: 135.30, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${C387_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 PASS=0; FAIL=0
@@ -127,7 +128,7 @@ f=main():i64{
 };
 TK
 python3 tlssrv.py > tport.txt 2>/dev/null & SRV=$!
-for _ in $(seq 1 50); do [ -s tport.txt ] && break; sleep 0.1; done
+tk_wait_until "${SRV}" tk_nonempty tport.txt
 got="$(PORT="$(head -1 tport.txt)" run c)"
 expect "4a a \$tlsconfig literal pins and connects; conn.id is the id" \
     "$(f 1 | sed 's/^[1-9][0-9]* /N /')" "N TLSv1.3"
@@ -166,7 +167,7 @@ while True:
     threading.Thread(target=handle, args=(conn,), daemon=True).start()
 PY
 python3 wsd.py > wport.txt 2>/dev/null & SRV=$!
-for _ in $(seq 1 50); do [ -s wport.txt ] && break; sleep 0.1; done
+tk_wait_until "${SRV}" tk_nonempty wport.txt
 cat > w.tk <<TK
 m=w;
 i=io:std.io;

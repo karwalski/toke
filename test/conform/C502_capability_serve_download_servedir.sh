@@ -41,10 +41,11 @@
 # Negative control for 5-9: on main each red case exits 0 (or keeps
 # listening) with the grant withheld -- recorded in the 121.42 report.
 #
-# Story: 121.42
+# Story: 121.42, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 GATE="${REPO_ROOT}/scripts/check_capability_sinks.py"
 PASS=0; FAIL=0
@@ -203,7 +204,7 @@ if [ "${built}" -eq 1 ]; then
     # 7 http.downloadfile, against a local python3 http.server
     python3 -m http.server --bind 127.0.0.1 --directory "${WORK}/dl" "${SPORT}" \
         >srv.log 2>&1 & SRVPID=$!; echo "${SRVPID}" >>"${PIDFILE}"
-    for _ in $(seq 1 50); do listening "${SPORT}" && break; sleep 0.1; done
+    tk_wait_until "${SRVPID}" tk_port_open "${SPORT}"
     rc=0; ./tdl --allow-net >t7a.out 2>t7a.err || rc=$?
     if capdenied "${rc}" fs.write t7a.err && [ ! -e got.txt ]; then
         pass "7a http.downloadfile --allow-net only: exit 1, CAP001 fs.write, nothing created"

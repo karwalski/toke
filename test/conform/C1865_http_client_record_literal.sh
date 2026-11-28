@@ -44,10 +44,11 @@
 # errors, and 3-6 segfaulted in 3 to 5 runs of 8 (rc 139); 7 and 8 were
 # refused as carrying a control (-1 for the download).
 #
-# Story: 138.24
+# Story: 138.24, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${C1865_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 RUNS="${C1865_RUNS:-8}"
@@ -95,7 +96,7 @@ srv.serve_forever()
 PY
 python3 srv.py origin.log 783 48140 > origin.port 2> origin.err & S1=$!
 python3 srv.py proxy.log 5 48145 > proxy.port 2> proxy.err & S2=$!
-for _ in $(seq 1 50); do [ -s origin.port ] && [ -s proxy.port ] && break; sleep 0.1; done
+tk_wait_until "${S1}" tk_nonempty origin.port; tk_wait_until "${S2}" tk_nonempty proxy.port
 OP="$(head -1 origin.port)"; PP="$(head -1 proxy.port)"
 if [ -z "${OP}" ] || [ -z "${PP}" ]; then
     echo "  FAIL: the servers did not start: $(head -c 200 origin.err proxy.err)"; echo "C1865: 0 passed, 1 failed"; exit 1

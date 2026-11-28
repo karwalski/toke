@@ -32,12 +32,13 @@
 # "never came up".  So the case now records the server's output, stops
 # waiting when the server exits, and says which of the two happened.
 #
-# Story: 127.192, 127.220 (item 3)
+# Story: 127.192, 127.220 (item 3), 127.565
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 
 PASS=0
@@ -60,30 +61,10 @@ trap cleanup EXIT
 echo "C081: http.servetlsworkers forks the worker count it is given"
 echo "--------------------------------------"
 
-# 135.24: the server binds port 0 and prints the port it got.  $1 = its log,
-# $2 = its pid; prints the port, or nothing if the server exits or never says.
-read_port() {
-    local p=""
-    for _ in $(seq 1 80); do
-        p="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' "$1" | head -1)"
-        [ -n "${p}" ] && break
-        kill -0 "$2" 2>/dev/null || break
-        sleep 0.1
-    done
-    echo "${p}"
-}
-
-wait_up() {   # $1 = port, $2 = server pid: 0 up, 1 timed out, 2 server exited
-    for _ in $(seq 1 80); do
-        kill -0 "$2" 2>/dev/null || return 2
-        python3 -c "
-import socket,sys
-s=socket.socket(); s.settimeout(0.3)
-sys.exit(0 if s.connect_ex(('127.0.0.1',$1))==0 else 1)" && return 0
-        sleep 0.25
-    done
-    return 1
-}
+# 135.24: the server binds port 0 and prints the port it got.  127.565: the
+# case waits for that line and then for the port to accept, for as long as
+# the server runs (tk_wait_until, TK_CONFORM_RUN_SECS hang guard) -- not for
+# 80 polls, which a server that started late under load outran.
 
 # Children of $1, once two readings 0.5 s apart agree.
 stable_children() {
@@ -131,19 +112,15 @@ EOF
     fi
     TK_HTTP_WORKERS=5 "${WORK}/s${w}.bin" >"${WORK}/s${w}.run" 2>&1 &
     SRV=$!
-    local up
-    port="$(read_port "${WORK}/s${w}.run" "${SRV}")"
-    if [ -z "${port}" ]; then
-        kill -0 "${SRV}" 2>/dev/null && up=1 || up=2
-    else
-        wait_up "${port}" "${SRV}"; up=$?
-    fi
+    local up=0 port=""
+    tk_wait_until "${SRV}" tk_listening "${WORK}/s${w}.run" || up=$?
+    port="$(tk_listening_port "${WORK}/s${w}.run")"
+    [ "${up}" = 0 ] && { tk_wait_until "${SRV}" tk_port_open "${port}" || up=$?; }
     if [ "${up}" != 0 ]; then
-        if [ "${up}" = 2 ]; then
-            wait "${SRV}" 2>/dev/null
-            echo "  FAIL: workers=${w}: server never came up (it exited with status $?)"
+        if [ "${up}" = 1 ]; then
+            echo "  FAIL: workers=${w}: server never came up (it exited with status $(tk_rc "${TK_WAIT_RC}"))"
         else
-            echo "  FAIL: workers=${w}: server never came up (still running, not listening on ${port} after 80 polls)"
+            echo "  FAIL: workers=${w}: server never came up (still running, not listening on '${port}' after ${TK_RUN_SECS} s: TK_CONFORM_RUN_SECS hang guard)"
         fi
         sed 's/^/      /' "${WORK}/s${w}.run" | head -5
         FAIL=$((FAIL + 1))

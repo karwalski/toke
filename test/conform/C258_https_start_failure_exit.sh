@@ -25,10 +25,11 @@
 # Negative control: C258_STDLIB=<dir> builds against another stdlib tree; a
 # copy with main's tk_web_glue.c fails cases 1-3 (exit 0, no structured line).
 #
-# Story: 135.22; case 4 binds port 0 since 135.24 (item 2)
+# Story: 135.22; case 4 binds port 0 since 135.24 (item 2), 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${C258_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 PASS=0; FAIL=0
@@ -122,7 +123,7 @@ s = socket.socket(); s.bind(("", 0)); s.listen(8)
 print(s.getsockname()[1], flush=True)
 time.sleep(3600)' > hold.port &   # killed after case 3 / by cleanup
 HOLD=$!
-for _ in $(seq 1 50); do [ -s hold.port ] && break; sleep 0.1; done
+tk_wait_until "${HOLD}" tk_nonempty hold.port
 BUSY="$(head -1 hold.port)"
 if [ -z "${BUSY}" ]; then
     echo "  FAIL: could not hold a port for case 3"; FAIL=$((FAIL + 1))
@@ -136,16 +137,16 @@ kill -9 "${HOLD}" 2>/dev/null; wait "${HOLD}" 2>/dev/null; HOLD=""
 # 4. a server that starts and is shut down cleanly still exits 0.  It binds
 #    port 0 and the port is read back from its `server_listening` line
 #    (135.24 item 2), so no other process can take it first.
+# answers_ok URL -- GET URL says "ok" (a tk_wait_until check, 127.565)
+answers_ok() { [ "$(curl -sk --max-time 2 "$1" 2>/dev/null)" = "ok" ]; }
 if build clean "http.servetlsworkers(0;\"${WORK}/cert.pem\";\"${WORK}/key.pem\";1)"; then
     ./clean_bin > clean.out 2> clean.err &
     SRV=$!
     up=1; CPORT=""
-    for _ in $(seq 1 80); do
-        kill -0 "${SRV}" 2>/dev/null || break
-        [ -n "${CPORT}" ] || CPORT="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' clean.err | head -1)"
-        if [ -n "${CPORT}" ] && [ "$(curl -sk --max-time 2 "https://127.0.0.1:${CPORT}/ok" 2>/dev/null)" = "ok" ]; then up=0; break; fi
-        sleep 0.1
-    done
+    if tk_wait_until "${SRV}" tk_listening clean.err; then
+        CPORT="$(tk_listening_port clean.err)"
+        tk_wait_until "${SRV}" answers_ok "https://127.0.0.1:${CPORT}/ok" && up=0
+    fi
     if [ "${up}" -ne 0 ]; then
         echo "  FAIL: the clean-shutdown server never answered (port read back: '${CPORT}')"
         sed 's/^/        | /' clean.err | head -4; FAIL=$((FAIL + 1))

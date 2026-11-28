@@ -28,10 +28,11 @@
 # connection closed before the header block ended" only when the server
 # closes; 4 answers $ok 200 10.  2, 3 and 5 pass on both.
 #
-# Story: 138.49
+# Story: 138.49, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 PASS=0; FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
@@ -93,7 +94,7 @@ while True:
     threading.Thread(target=serve, args=(c,), daemon=True).start()
 PY
 python3 srv.py port srv.log 2> srv.err & SRV=$!
-for _ in $(seq 1 50); do [ -s port ] && break; sleep 0.1; done
+tk_wait_until "${SRV}" tk_nonempty port
 P="$(cat port 2>/dev/null)"
 if [ -z "${P}" ]; then fail "the loopback server did not start: $(head -c 200 srv.err)"; echo "C2061: ${PASS} passed, ${FAIL} failed"; exit 1; fi
 

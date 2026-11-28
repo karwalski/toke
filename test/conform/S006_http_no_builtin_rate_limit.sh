@@ -39,12 +39,13 @@
 # Rate limiting belongs in front of the server.  See docs/stdlib/http.md,
 # "Rate limiting", and the note in src/stdlib/http.c where the table was.
 #
-# Story: 127.60
+# Story: 127.60, 127.565
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 
 PASS=0
@@ -86,21 +87,10 @@ fi
 
 ./srv.bin >/dev/null 2>srv.err &
 SRV=$!
-for _ in $(seq 1 80); do
-    PORT="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' srv.err | head -1)"
-    [ -n "${PORT}" ] && break
-    kill -0 "${SRV}" 2>/dev/null || break
-    sleep 0.1
-done
+tk_wait_until "${SRV}" tk_listening srv.err
+PORT="$(tk_listening_port srv.err)"
 READY=0
-for _ in $(seq 1 80); do
-    python3 -c "
-import socket,sys
-s=socket.socket()
-s.settimeout(0.3)
-sys.exit(0 if s.connect_ex(('127.0.0.1',${PORT}))==0 else 1)" && { READY=1; break; }
-    sleep 0.25
-done
+[ -n "${PORT}" ] && tk_wait_until "${SRV}" tk_port_open "${PORT}" && READY=1
 # 127.156: a server that never came up used to fall through to the probe,
 # where 400 refused connections read as "throttled".  Say what happened.
 if [ "${READY}" -ne 1 ]; then

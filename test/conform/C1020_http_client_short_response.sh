@@ -22,11 +22,12 @@
 # data held 0\r\n\r\n: `ok 0`), 13 red (`ok 11 abcdefghXYZ`); 9, 11, 12, 14
 # green on both (11 only because main read the missing status as 0).
 #
-# Story: 138.23
+# Story: 138.23, 127.565
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/toke}"
 PASS=0; FAIL=0
 expect() {
@@ -92,7 +93,7 @@ while True:
     threading.Thread(target=serve, args=(c,), daemon=True).start()
 PY
 python3 srv.py > srv.port 2> srv.err & SRV=$!
-for _ in $(seq 1 50); do [ -s srv.port ] && break; sleep 0.1; done
+tk_wait_until "${SRV}" tk_nonempty srv.port
 P="$(head -1 srv.port 2>/dev/null)"
 if [ -z "${P}" ]; then echo "FAIL: the loopback server did not start"; echo "C1020: 0 passed, 1 failed"; exit 1; fi
 

@@ -43,10 +43,11 @@
 # $ok 400), and 2 and 10 failed at the name lookup ("TCP connect failed")
 # rather than being refused.
 #
-# Story: 138.24
+# Story: 138.24, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${C1866_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 PASS=0; FAIL=0
@@ -96,7 +97,7 @@ print(p, flush=True)
 srv.serve_forever()
 PY
 python3 rec.py rec.log > rec.port 2> rec.err & S1=$!
-for _ in $(seq 1 50); do [ -s rec.port ] && break; sleep 0.1; done
+tk_wait_until "${S1}" tk_nonempty rec.port
 P="$(head -1 rec.port)"
 [ -n "${P}" ] || { echo "  FAIL: the recorder did not start: $(head -c 200 rec.err)"; echo "C1866: 0 passed, 1 failed"; exit 1; }
 

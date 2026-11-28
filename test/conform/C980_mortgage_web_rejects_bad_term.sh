@@ -36,10 +36,11 @@
 # after it.  The 127.328 example (3b469371) passes 1-6, accepts 101 and
 # dies on the huge term, failing 7-9.
 #
-# Stories: 127.328, 127.329
+# Stories: 127.328, 127.329, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}"
 EXAMPLE="${C980_EXAMPLE:-${REPO_ROOT}/examples/mortgage-web}"
@@ -77,12 +78,8 @@ fi
 ./app --allow-net --allow-fs > srv.out 2> srv.err &
 SRV=$!
 port=""
-for _ in $(seq 1 80); do
-    port="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' srv.err | head -1)"
-    [ -n "${port}" ] && break
-    kill -0 "${SRV}" 2>/dev/null || break
-    sleep 0.1
-done
+tk_wait_until "${SRV}" tk_listening srv.err
+port="$(tk_listening_port srv.err)"
 if [ -z "${port}" ]; then
     echo "  FAIL: the server did not start"; sed 's/^/      /' srv.err | head -6
     echo "Results: 0 passed, 1 failed"; exit 1

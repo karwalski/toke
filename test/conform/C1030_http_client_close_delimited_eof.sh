@@ -30,11 +30,12 @@
 # Negative control: C1030_STDLIB=<dir with a37cd26e's src/stdlib> -- see the
 # commit for the measured result.
 #
-# Story: 138.31
+# Story: 138.31, 127.565
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/toke}"
 export TKC_STDLIB_DIR="${C1030_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 PASS=0; FAIL=0
@@ -128,7 +129,7 @@ loop(plain, None)
 PY
 if [ "${HAVE_TLS}" = 1 ]; then python3 srv.py c.pem k.pem > srv.port 2> srv.err & SRV=$!
 else python3 srv.py > srv.port 2> srv.err & SRV=$!; fi
-for _ in $(seq 1 50); do [ -s srv.port ] && break; sleep 0.1; done
+tk_wait_until "${SRV}" tk_nonempty srv.port
 P="$(awk '{print $1}' srv.port 2>/dev/null)"; TP="$(awk '{print $2}' srv.port 2>/dev/null)"
 if [ -z "${P}" ]; then echo "FAIL: the loopback server did not start"; cat srv.err; echo "C1030: 0 passed, 1 failed"; exit 1; fi
 

@@ -54,10 +54,11 @@
 # URL check removed: 9 fails -- $ok 200, and the server read Host
 # svc.example followed by an X-Inj header line.
 #
-# Story: 138.25
+# Story: 138.25, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${C1862_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 PASS=0; FAIL=0
@@ -126,7 +127,7 @@ start() {   # start [CERTNAME] -> PORT
     if [ $# -gt 0 ]; then python3 srv.py srv.log "$1.pem" "$1.key" > srv.port 2> srv.err &
     else python3 srv.py srv.log > srv.port 2> srv.err & fi
     SRV=$!
-    for _ in $(seq 1 50); do [ -s srv.port ] && break; sleep 0.1; done
+    tk_wait_until "${SRV}" tk_nonempty srv.port
     PORT="$(head -1 srv.port)"
     [ -n "${PORT}" ] || { fail "the server did not start: $(head -c 200 srv.err)"; echo "C1862: ${PASS} passed, ${FAIL} failed"; exit 1; }
 }
@@ -134,7 +135,8 @@ start6() {   # a plain server on [::1] only -> PORT, or PORT empty
     stop; rm -f srv.port; : > srv.log
     SRV6=1 python3 srv.py srv.log > srv.port 2> srv.err &
     SRV=$!
-    for _ in $(seq 1 50); do [ -s srv.port ] && break; kill -0 "${SRV}" 2>/dev/null || break; sleep 0.1; done
+    # a host without ::1 cannot bind it: the exit is an outcome here, not a failure
+    tk_wait_until "${SRV}" tk_nonempty srv.port 2>/dev/null
     PORT="$(head -1 srv.port 2>/dev/null)"
 }
 

@@ -25,10 +25,11 @@
 # Main's src/stdlib has no http.clientget; with SSL_CTX_set_verify(...)
 # changed to SSL_VERIFY_NONE (measured), cases 1 and 3 take $ok.
 #
-# Story: 138.8 (the defect is filed separately; see the commit)
+# Story: 138.8 (the defect is filed separately; see the commit), 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${C279_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 PASS=0; FAIL=0
@@ -83,7 +84,7 @@ start() {   # start CERTNAME -> PORT
     rm -f srv.port
     python3 tsrv.py srv.log "$1.pem" "$1.key" > srv.port 2> srv.err &
     SRV=$!
-    for _ in $(seq 1 50); do [ -s srv.port ] && break; sleep 0.1; done
+    tk_wait_until "${SRV}" tk_nonempty srv.port
     PORT="$(head -1 srv.port)"
 }
 

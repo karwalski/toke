@@ -22,10 +22,11 @@
 # stdlib tree.  Against main 73f7466 cases 1, 2 and 4 fail (every host
 # binds *, and "not-a-host" serves).
 #
-# Story: 135.28 (item 2)
+# Story: 135.28 (item 2), 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${C363_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 PASS=0; FAIL=0; SRV=""
@@ -74,12 +75,8 @@ serve() {
     local port="" addr="" body=""
     ./rs_bin "$1" > srv.out 2> srv.err &
     SRV=$!
-    for _ in $(seq 1 80); do
-        port="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' srv.err | head -1)"
-        [ -n "${port}" ] && break
-        kill -0 "${SRV}" 2>/dev/null || break
-        sleep 0.1
-    done
+    tk_wait_until "${SRV}" tk_listening srv.err
+    port="$(tk_listening_port srv.err)"
     if [ -n "${port}" ]; then
         body="$(curl -s --max-time 3 "http://127.0.0.1:${port}/" 2>/dev/null)"
         addr="$(bound "${SRV}" "${port}")"

@@ -32,10 +32,11 @@
 # Main's src/stdlib does not link (no tk_http_client*_w, tk_http_geturl_w).
 # With client_result() ignoring is_err (measured), cases 7 and 8b take $ok.
 #
-# Story: 138.3
+# Story: 138.3, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${C278_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 PASS=0; FAIL=0
@@ -82,7 +83,7 @@ s.serve_forever()
 PY
 python3 rec.py rec.log > rec.port 2> rec.err &
 REC=$!
-for _ in $(seq 1 50); do [ -s rec.port ] && break; sleep 0.1; done
+tk_wait_until "${REC}" tk_nonempty rec.port
 P="$(head -1 rec.port)"
 if [ -z "${P}" ]; then echo "  FAIL: the recorder did not start"; echo "Results: 0 passed, 1 failed"; exit 1; fi
 

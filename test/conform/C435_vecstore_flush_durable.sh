@@ -30,10 +30,11 @@
 # (c15dd11 .. 8efba9ea) the program does not compile: vecstore.flush does not
 # exist.
 #
-# Story: 136.15
+# Story: 136.15, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${C435_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 PASS=0; FAIL=0
@@ -139,7 +140,7 @@ export VFA="${WORK}/A" VFB="${WORK}/B" VFMARK="${WORK}/ready"
 # 1. write, flush, write more, then die by SIGKILL -- close never runs.
 VFPHASE=write ./vf --allow-write --allow-read > write.out 2>&1 &
 PID=$!
-for _ in $(seq 1 200); do [ -f "${VFMARK}" ] && break; sleep 0.05; done
+tk_wait_until "$PID" test -f "${VFMARK}"
 if [ -f "${VFMARK}" ] && kill -0 "$PID" 2>/dev/null; then
     kill -9 "$PID"; wait "$PID" 2>/dev/null; rc=$?; PID=""
     if [ "$rc" -eq 137 ]; then ok "process 1 reached the marker and was SIGKILLed (exit 137)"

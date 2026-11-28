@@ -28,10 +28,11 @@
 # (B starts and takes loopback traffic: "B"), 3 and 4 pass (measured on
 # Darwin 25.6).  On Linux cases 1 and 2 pass either way: that is the point.
 #
-# Story: 135.32
+# Story: 135.32, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${C391_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 PASS=0; FAIL=0
@@ -76,19 +77,15 @@ TOKE
 start() {
     "./$1" > "$1.out" 2> "$1.err" &
     SPID=$!; PIDS+=("${SPID}"); SPORT=""
-    for _ in $(seq 1 80); do
-        SPORT="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' "$1.err" | head -1)"
-        [ -n "${SPORT}" ] && break
-        kill -0 "${SPID}" 2>/dev/null || break
-        sleep 0.1
-    done
+    tk_wait_until "${SPID}" tk_listening "$1.err"
+    SPORT="$(tk_listening_port "$1.err")"
 }
 
 who() { curl -s --max-time 2 "http://127.0.0.1:$1/who" 2>/dev/null; }
 
-answers() {   # answers PORT TAG -> 0 once GET /who says TAG
-    for _ in $(seq 1 50); do [ "$(who "$1")" = "$2" ] && return 0; sleep 0.1; done
-    return 1
+says() { [ "$(who "$1")" = "$2" ]; }
+answers() {   # answers PID PORT TAG -> 0 once GET /who says TAG, for as long
+    tk_wait_until "$1" says "$2" "$3"   # as PID runs (127.565)
 }
 
 # second NAME PORT FN LABEL -- NAME on a busy PORT must exit 1 with the bind
@@ -127,7 +124,7 @@ restart() {
     build c_srv C 'http.serveon("127.0.0.1";0)'
     start c_srv
     local port="${SPORT}" pid="${SPID}"
-    if [ -z "${port}" ] || ! answers "${port}" C; then
+    if [ -z "${port}" ] || ! answers "${pid}" "${port}" C; then
         echo "  FAIL: ${label}: C never answered"; FAIL=$((FAIL + 1)); stop "${pid}"; return
     fi
     # The server must close first for ITS side to sit in TIME_WAIT: hold a
@@ -151,7 +148,7 @@ restart() {
     build d_srv D "${call//PORT/${port}}"
     "./d_srv" > d_srv.out 2> d_srv.err &
     local dpid=$!; PIDS+=("${dpid}")
-    local ok=no; answers "${port}" D && ok=yes
+    local ok=no; answers "${dpid}" "${port}" D && ok=yes
     stop "${dpid}"
     if [ "${tw}" -ge 1 ] && [ "${ok}" = yes ]; then
         echo "  PASS: ${label} (${tw} TIME_WAIT on :${port})"; PASS=$((PASS + 1))
@@ -166,7 +163,7 @@ restart() {
 build a_any A 'http.serveworkerson("0.0.0.0";0;1)'
 start a_any
 A1="${SPID}"
-if [ -z "${SPORT}" ] || ! answers "${SPORT}" A; then
+if [ -z "${SPORT}" ] || ! answers "${SPID}" "${SPORT}" A; then
     echo "  FAIL: server A on *:0 never answered"; FAIL=$((FAIL + 1))
 else
     build b_lo B "http.serveon(\"127.0.0.1\";${SPORT})"
@@ -178,7 +175,7 @@ stop "${A1}"
 build a_lo A 'http.serveon("127.0.0.1";0)'
 start a_lo
 A2="${SPID}"
-if [ -z "${SPORT}" ] || ! answers "${SPORT}" A; then
+if [ -z "${SPORT}" ] || ! answers "${SPID}" "${SPORT}" A; then
     echo "  FAIL: server A on 127.0.0.1:0 never answered"; FAIL=$((FAIL + 1))
 else
     build b_any B "http.serveworkers(${SPORT};1)"

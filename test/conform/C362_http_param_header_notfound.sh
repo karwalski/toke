@@ -27,10 +27,11 @@
 # stdlib tree.  Against main 73f7466 cases 1 and 2 fail (every missing name
 # is $ok "").
 #
-# Story: 135.28 (item 1)
+# Story: 135.28 (item 1), 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${C362_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 PASS=0; FAIL=0; SRV=""
@@ -90,12 +91,8 @@ if ! "${TKC}" --diag-text --allow-all --out srv srv.tk > srv.log 2>&1; then
 else
     ./srv >/dev/null 2>srv.err & SRV=$!
     PORT=""
-    for _ in $(seq 1 100); do
-        PORT="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' srv.err | head -1)"
-        [ -n "${PORT}" ] && break
-        kill -0 "${SRV}" 2>/dev/null || break
-        sleep 0.1
-    done
+    tk_wait_until "${SRV}" tk_listening srv.err
+    PORT="$(tk_listening_port srv.err)"
     got="$(curl -s --max-time 5 -H 'X-Key: kv' -H 'X-Empty;' "http://127.0.0.1:${PORT:-1}/u/7" 2>/dev/null)"
     expect "2  under a real server" "${got}" "${WANT}"
     got="$(curl -s --max-time 5 -H 'X-Key: other' "http://127.0.0.1:${PORT:-1}/u/42" 2>/dev/null)"
