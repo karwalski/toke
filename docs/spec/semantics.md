@@ -826,7 +826,7 @@ undefined behaviour. Each single output write is atomic: the text of one
 write (one `io.println`, for example) is never interleaved with another
 task's output, so no line is torn (ADR-0017 owner resolution 7). The compiler
 emits no lint for output from tasks. *Runtime: 127.571; the atomicity of
-every output function is audited by a follow-up story filed with 127.568.*
+every output function is audited by story 127.576.*
 
 #### 7.1.9 Tasks and `{arena}` blocks
 
