@@ -27,12 +27,13 @@
 # LOAD-INDEPENDENT BY CONSTRUCTION: three fixed request/response pairs with
 # exact expected bodies.  No counting, no timing, no thresholds.
 #
-# Story: 127.75
+# Story: 127.75, 127.565
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 
 PASS=0
@@ -92,20 +93,10 @@ fi
 
 "${WORK}/srv.bin" >/dev/null 2>"${WORK}/srv.err" &
 SRV=$!
-for _ in $(seq 1 80); do
-    PORT="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' "${WORK}/srv.err" | head -1)"
-    [ -n "${PORT}" ] && break
-    kill -0 "${SRV}" 2>/dev/null || break
-    sleep 0.1
-done
+tk_wait_until "${SRV}" tk_listening "${WORK}/srv.err"
+PORT="$(tk_listening_port "${WORK}/srv.err")"
 up=0
-for _ in $(seq 1 80); do
-    python3 -c "
-import socket,sys
-s=socket.socket(); s.settimeout(0.3)
-sys.exit(0 if s.connect_ex(('127.0.0.1',${PORT}))==0 else 1)" && { up=1; break; }
-    sleep 0.25
-done
+[ -n "${PORT}" ] && tk_wait_until "${SRV}" tk_port_open "${PORT}" && up=1
 if [ "${up}" -ne 1 ]; then
     echo "  FAIL: the multi-mount server never came up"
     echo "Results: 0 passed, 1 failed"

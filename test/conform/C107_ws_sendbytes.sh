@@ -19,12 +19,13 @@
 # Negative control: delete tk_ws_sendbytes_w from src/stdlib/ws_glue.c — the
 # client no longer links (undefined tk_ws_sendbytes_w).
 #
-# Story: 127.150
+# Story: 127.150, 127.565
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}"
 
@@ -107,13 +108,7 @@ PORT="$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));prin
 python3 "${WORK}/echo.py" "${PORT}" > "${WORK}/echo.log" 2>&1 &
 WSS=$!
 up=0
-for _ in $(seq 1 80); do
-    python3 -c "
-import socket,sys
-s=socket.socket(); s.settimeout(0.3)
-sys.exit(0 if s.connect_ex(('127.0.0.1',${PORT}))==0 else 1)" && { up=1; break; }
-    sleep 0.25
-done
+tk_wait_until "${WSS}" tk_port_open "${PORT}" && up=1
 if [ "${up}" -ne 1 ]; then
     echo "  FAIL: the loopback WebSocket server never came up"
     echo "Results: 0 passed, 1 failed"

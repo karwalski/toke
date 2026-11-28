@@ -30,12 +30,13 @@
 # path — must still be running the SAME worker pids it started with.  A
 # respawn is a change of pid, and a contended machine does not change a pid.
 #
-# Story: 127.144
+# Story: 127.144, 127.565
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 
 PASS=0
@@ -60,27 +61,18 @@ echo "--------------------------------------"
 
 # 135.24: each server binds port 0 and prints the port it got; read_port
 # sets PORT from that line (no probe-then-bind window).  $1 = the server's
-# stderr log.  Fails if the server exits or never says.
+# stderr log.  127.565: read_port and wait_up wait for the event -- the line,
+# then the port accepting -- for as long as SRV runs (tk_wait_until, with
+# the TK_CONFORM_RUN_SECS hang guard), and a server that exits or hangs
+# first is named on stderr with its exit status.
 read_port() {
     PORT=""
-    for _ in $(seq 1 80); do
-        PORT="$(sed -n 's/^DIAGNOSTIC: kind=server_listening port=\([0-9][0-9]*\)$/\1/p' "$1" | head -1)"
-        [ -n "${PORT}" ] && return 0
-        kill -0 "${SRV}" 2>/dev/null || return 1
-        sleep 0.1
-    done
-    return 1
+    tk_wait_until "${SRV}" tk_listening "$1" || return 1
+    PORT="$(tk_listening_port "$1")"
 }
 
-wait_up() {   # $1 = port, $2 = "tls" | "plain"
-    for _ in $(seq 1 80); do
-        python3 -c "
-import socket,sys
-s=socket.socket(); s.settimeout(0.3)
-sys.exit(0 if s.connect_ex(('127.0.0.1',$1))==0 else 1)" && return 0
-        sleep 0.25
-    done
-    return 1
+wait_up() {   # $1 = port
+    tk_wait_until "${SRV}" tk_port_open "$1"
 }
 
 # ── the clients ──────────────────────────────────────────────────────────
