@@ -7,7 +7,9 @@ order: 6
 
 **Status:** Normative [N]
 **Extends:** toke Language Specification §14 (v0.3 base as amended by toke-spec-v0.4.md)
-**Version:** 0.4, amended 2026-11-24 (story 127.524)
+**Version:** 0.4, amended 2026-11-24 (story 127.524) and 2026-11-28 (story 127.568)
+
+> **Amended 2026-11-28 (story 127.568, ADR-0017 D5.5).** §3 is corrected, not only extended: §3.2 said that values "must be copied at the point of task creation", but what ships, and what ADR-0017 keeps, is a copy of the bindings with heap values shared under immutability and copy-on-write. §3.3 becomes a checked property, §1.3 gains the release of task descriptors, and §6.5 states what the no-data-race property rests on. The `sc` construct itself is specified in `docs/spec/semantics.md` §7.1. Rules not yet implemented name the story that implements them.
 
 > **Amended 2026-11-24 (story 127.524, owner answer 1.13 (b), `docs/owner-decisions-2026-11-12.md`, revised 2026-11-13).**
 > Until this amendment, §1.1 said that every function body allocates in an arena, §1.3 that the arena is freed in one operation when the scope exits, and §2.3 that a returned value is copied into the caller's arena. No toke implementation has ever done this. This document now describes the allocation model that ships: runtime-created values come from `malloc` or from the S1 sealed-string heap and are not released before the program exits, with the exceptions listed in §1.3. The per-function arena is **not implemented** and is no longer part of the model. Releasing memory before exit, starting with the explicit `{arena}` block, is the subject of an ADR under story 127.525. Until that ADR is accepted, `{arena}` releases nothing (§1.2). The design input for both stories is `docs/decisions/127.299-function-arena.md`.
@@ -40,6 +42,7 @@ Memory that the runtime allocates is not released before the program exits, with
 1. **Closure environments.** A closure's environment struct is released when the last reference to it is released (§2.5, story 124.0c).
 2. **The number conversions of a string interpolation.** In `"k\(i)=\(x)"` the conversion of each number segment is freed right after the literal's parts are joined into the result. No toke value can reach these conversions (story 127.299, `docs/decisions/127.299-function-arena.md` §6).
 3. **Reused buffers.** The per-thread error buffer (§1.1) is reused, not released.
+4. **Task descriptors.** The runtime's descriptor of each task started in an `sc` block is released when the block exits, after the join (§3.3). No toke value can reach a descriptor then, because a task handle cannot outlive its block (`semantics.md` §7.1.6). A task's **result** is not released: it is a value like any other and lives under the rest of this section. *Implemented by 127.571; until then descriptors are never released.*
 
 An implementation may release, at any time, memory that no toke value can still reach. It shall not release memory that a toke value can still reach. When the program exits, the operating system reclaims everything.
 
@@ -107,21 +110,36 @@ Module-level constants and declarations have static lifetime. They are initialis
 
 ### 3.1 Task Allocation
 
-A spawned task (via `sc` structured concurrency) allocates from the same process-wide sources as every other task (§1.1). There is no per-task arena. The sealed heap's bump is atomic, and `malloc` is thread-safe.
+A task started by `sc E` (`semantics.md` §7.1.3) allocates from the same process-wide sources as every other thread (§1.1). There is no per-task arena. The sealed heap's bump is atomic, and `malloc` is thread-safe. A task runs on a pool thread, or on a thread that joins its block or reads its handle and runs it inline; either way it allocates outside any `{arena}` region of the starting thread (§3.5).
 
 ### 3.2 No Shared Mutable State
 
-Values shared between tasks must be copied at the point of task creation. There is no mechanism to share mutable memory between tasks. This eliminates data races by construction.
+There is no mechanism to share mutable memory between tasks.
 
-When a task is spawned, any values the task body references are copied for the new task. The spawning task and the spawned task then operate on independent copies.
+What crosses to a task is the **bindings**, copied, not a deep copy of the values. The callee and the arguments of the task's call are evaluated on the starting thread and copied into an environment that the compiler builds for the task, as a closure's captures are copied (§2.5). The environment is `malloc`'d, owned by the task, and released when the call returns. A scalar argument is copied by value. A heap argument (a string, array, map, struct or sum box) is shared by reference to the same allocation, and sharing it is race-free because no task can write it in place:
+
+- **Strings** are sealed and never written after they are sealed (§1.1).
+- **Arrays and maps** are copy-on-write with a monotonic count (ADR-0006). A mutation of an array or map that another holder can still see copies it first. The in-place fast paths run only on a binding the code generator has proven linear, and an array or map passed to a task's call, or returned from one, counts as an alias, so neither side mutates it in place. *Proof obligation O1 of ADR-0017, discharged by 127.571.*
+- **Reference counts** that two threads can update at once are updated atomically. Closure counts already are (127.549); the array count's increment becomes an atomic add. *Proof obligation O2, discharged by 127.571.*
+
+The starting thread and the task therefore never observe a write by the other.
 
 ### 3.3 Structured Concurrency Lifetime Guarantee
 
-A parent task does not exit its `sc` block until all of its child tasks have completed. Child task lifetimes are therefore always contained within the parent's `sc` block.
+A thread does not leave an `sc` block, by any exit, until every task started in it has completed (`semantics.md` §7.1.5). Task lifetimes are therefore contained within the block that started them. This is a checked property, not a convention:
+
+- the join is emitted on **every** exit edge of the block: falling off the end, `<` / `rt`, `<` in an `mt` arm, `br` out of an enclosing `lp`, and `!` propagation (*implemented by 127.571*);
+- a task handle cannot outlive its block: it cannot be returned, stored outside the block, passed as an argument or captured (E4083, `semantics.md` §7.1.6; *implemented by 127.570*).
+
+Because nothing can refer to a task after its block, the runtime releases the block's task descriptors at its exit (§1.3 item 4).
 
 ### 3.4 Task Return Values
 
-When a child task produces a result, the result is handed to the parent task as a value, following the same rules as function return values (§2.3).
+A task's result is handed to the reader of its handle (`h()`) by the return rule (§2.3): a scalar by value, and a string, array, map or box by reference to the same allocation. Reading the handle again gives the same value. A task's error crosses explicitly: the error box and error status the task's call left in its worker's per-thread slots (§1.1) are copied into the task's descriptor before that worker runs anything else, and a read restores them into the reader's slots, so `!` and `mt` see what a direct call would have left. *Proof obligation O3 of ADR-0017, discharged by 127.571.*
+
+### 3.5 Tasks and `{arena}` Blocks
+
+Regions are per thread (ADR-0016 D3). A task allocates on its own thread outside any region of the thread that started it. A task expression inside an `{arena}` block must belong to an `sc` block that is also inside that `{arena}` block (E5003, `semantics.md` §7.1.9; *implemented by 127.570*), so the region outlives every task that can read values captured from it. A thread that runs a queued task inline masks its own region stack while it does (ADR-0017 O4, recorded for the ADR-0016 implementation), so the task allocates exactly as it would on a worker.
 
 ---
 
@@ -193,7 +211,7 @@ Memory is not bounded. Retained memory grows with the total bytes the program al
 
 ### 6.5 No Data Races
 
-Tasks do not share mutable memory (Section 3.2). All inter-task communication is by copy. Therefore concurrent access to the same mutable memory location cannot occur.
+Tasks do not share mutable memory (§3.2). What a task receives is a copy of its call's bindings; heap values are shared only by reference to memory that no holder writes in place (sealed strings, and copy-on-write arrays and maps that count a task's copy as an alias); counts that two threads can update are updated atomically; and a task's result and error state reach the reader by the return rule after the task has completed (§3.4). Therefore no two threads access the same memory location concurrently where at least one access is a write. Side effects outside memory (output, files) may interleave between tasks in an unspecified order, with each single output write atomic (`semantics.md` §7.1.8); that is an unspecified order among defined outcomes, not a data race. *The O1 and O2 obligations this rests on are discharged by 127.571.*
 
 ### 6.6 Spatial and Arithmetic Safety [N]
 

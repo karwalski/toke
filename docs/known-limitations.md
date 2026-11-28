@@ -81,29 +81,32 @@ of `0` is correctly distinguished from `$none`. Root cause was the return path �
 **Remaining:** there is still no `$some` wrapper or distinct `$option<T>` type, and
 closures/error-unions are not yet type-checked (see #3 follow-ups / ADR-0014).
 
-### 6. No concurrency primitives beyond `std.task`
+### 6. No channels, mutexes or atomics; no cancellation
 
-`std.task` provides `task.scope()`, `task.spawn(scope; &fn)`,
-`task.awaitall(scope)`, and `task.result(handle)` — basic structured
-concurrency with a thread pool. There are no channels, mutexes or atomics,
-and the `sc`/`spawn` keywords are partial (below).
+toke's one concurrency construct is the `sc` block with typed task handles
+(`docs/spec/semantics.md` §7.1, ADR-0017): `sc work(x)` starts a call as a
+task, `h()` reads its typed result, and every task is joined on every exit
+from its block. Tasks share no mutable state and communicate only through
+the arguments of their call and their result. Beyond that there are:
 
-**Workaround:** Use `std.task` for coarse-grained parallelism. For HTTP
-servers, ooke uses pre-fork for scaling.
+- **No channels, mutexes or atomics.** A pipeline between tasks is written as
+  stages of `sc` blocks: a task that needs another's result reads it first
+  and passes the value (`let a=h(); let k=sc next(a);`). Task handles cannot
+  be passed or captured.
+- **No cancellation** (ADR-0017 D3.5). Every task started runs to completion
+  exactly once. On an early exit or an error the block still waits for every
+  task it started, so a program that wants to stop early has to structure its
+  tasks to finish early.
 
-**Planned fix:** `sc`/`spawn` keywords deferred to v0.5 (Story 76.1.1b).
-Formal memory model documented (Story 76.1.4).
+The side effects of concurrent tasks interleave in an unspecified order; each
+single output write is atomic (semantics.md §7.1.8). For HTTP servers, ooke
+uses pre-fork for scaling.
 
-**As implemented (verified 2026-11-26, story 127.549):** the parser accepts
-`sc{ ... }` and, inside it, `spawn f` where `f` is a `():T` function value
-(`spawn &w`, a closure); `sc` awaits its tasks at the closing brace and
-`spawn` yields a task handle. Both lower to the same runtime as
-`task.spawn`, so results and closures behave as `docs/stdlib/task.md`
-describes. Two gaps remain, tracked as story 127.553: a program using `sc`
-without `i=task:std.task;` does not link (E9003, undefined `tk_task_*`),
-and reading a result still needs `task.result` from std.task. `spawn w()`
-(a call) and `task.spawn(s;w())` are E4081: they used to run `w` at once and
-spawn its result as code.
+**Status (2026-11-28):** the construct above is specified, not yet
+implemented. It lands with stories 127.569 (parser), 127.570 (checker),
+127.571 (lowering and runtime) and 127.572, which withdraws `std.task` and
+the `spawn` form (E2038). Until then the shipped compiler accepts only the
+earlier form those stories replace.
 
 ### 7. ~~Bitwise operators deferred~~ — IMPLEMENTED
 
