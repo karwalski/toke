@@ -34,10 +34,11 @@
 # cases; infer is controlled by putting the popen form back in a copy.
 # Recorded in the 121.23 report.
 #
-# Story: 121.23
+# Story: 121.23, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 CC="${CC:-cc}"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 S="${C591_STDLIB:-${REPO_ROOT}/src/stdlib}"
@@ -169,9 +170,8 @@ s.serve_forever()
 PY
 start_srv() {  # MODE PORTFILE LOG [PORT]
     python3 srv.py "$@" >/dev/null 2>&1 &
-    PIDS="${PIDS} $!"
-    for _ in $(seq 1 100); do [ -s "$2" ] && return 0; sleep 0.05; done
-    return 1
+    local pid=$!; PIDS="${PIDS} ${pid}"
+    tk_wait_until "${pid}" tk_nonempty "$2"
 }
 : > tls.log; : > plain.log
 start_srv tls tls.port tls.log || { fail "https server did not start"; }

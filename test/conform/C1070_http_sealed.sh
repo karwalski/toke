@@ -39,10 +39,11 @@
 #   correct (the reader conversion is a speed change, gated by the ratchet).
 # Measured: this branch 16 passed (11 C + 5 toke).
 #
-# Story: 127.295
+# Story: 127.295, 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 S="${C1070_STDLIB:-${REPO_ROOT}/src/stdlib}"
 export TKC_STDLIB_DIR="${S}"
@@ -85,7 +86,7 @@ while True:
     threading.Thread(target=serve, args=(c,), daemon=True).start()
 PY
 python3 srv.py > srv.port 2> srv.err & SRV=$!
-for _ in $(seq 1 50); do [ -s srv.port ] && break; sleep 0.1; done
+tk_wait_until "${SRV}" tk_nonempty srv.port
 P="$(head -1 srv.port 2>/dev/null)"
 if [ -z "${P}" ]; then echo "FAIL: the loopback server did not start"; echo "C1070: 0 passed, 1 failed"; exit 1; fi
 BASE="http://127.0.0.1:${P}"

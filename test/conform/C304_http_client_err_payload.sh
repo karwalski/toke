@@ -23,11 +23,12 @@
 # dereference"; case 2's program also reads a 404 payload), 4 and 5 red
 # (both BUILT).  2b (300 requests arrive) is green on both.
 #
-# Story: 138.3
+# Story: 138.3, 127.565
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/toke}"
 PASS=0; FAIL=0
 expect() {
@@ -78,7 +79,7 @@ print(s.server_address[1], flush=True)
 s.serve_forever()
 PY
 python3 rec.py > rec.port 2> rec.err & REC=$!
-for _ in $(seq 1 50); do [ -s rec.port ] && break; sleep 0.1; done
+tk_wait_until "${REC}" tk_nonempty rec.port
 P="$(head -1 rec.port)"
 cat > p2.tk <<TOKE
 m=p2;

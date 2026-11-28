@@ -24,10 +24,11 @@
 # beside A); case 2 green.  On Linux case 1 passes either way (Linux refuses
 # an overlapping bind with or without SO_REUSEADDR): that is the point.
 #
-# Story: 135.34 (3)
+# Story: 135.34 (3), 127.565
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 export TKC_STDLIB_DIR="${C575_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 PASS=0; FAIL=0
@@ -113,7 +114,7 @@ while True:
     n += 1; c.close()
 PY
 PEER=$!; PIDS+=("${PEER}")
-for _ in $(seq 1 50); do grep -q up peer.out && break; sleep 0.1; done
+tk_wait_until "${PEER}" grep -q up peer.out
 got="$(run_srv 5)"; srv_pid
 [ -n "${SRVPID:-}" ] && stop "${SRVPID}"
 reach="$(python3 -c "import socket,sys;s=socket.create_connection(('127.0.0.1',${P}),2);print('reached');s.close()" 2>/dev/null)"
