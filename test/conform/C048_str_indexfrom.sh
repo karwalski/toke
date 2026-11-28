@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # C048_str_indexfrom.sh — str.indexfrom(s; sub; start): indexof with a start.
 #
-# Story: 127.91.
+# Story: 127.91, 127.559.
 #
 # THE GAP.  `str.indexof(s; sub)` takes two arguments and cannot be told
 # where to begin, so a scanner written in toke had to slice off the tail
@@ -23,6 +23,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 
 PASS=0
@@ -61,7 +62,7 @@ EOF
         sed 's/^/      /' compile.log | tail -2
         FAIL=$((FAIL + 1)); return
     fi
-    local out; out="$(./a_bin 2>&1)"
+    local out; out="$(tk_run ./a_bin 2>&1)"
     if [ "${out}" = "${expected}" ]; then
         echo "  PASS: ${name} — ${expected}"
         PASS=$((PASS + 1))
@@ -107,17 +108,18 @@ f=main():i64{
 };
 EOF
 # A wrong offset (e.g. relative to `start`) makes this loop never end, so
-# the run is bounded: perl's alarm kills it after 10 s.
+# the run is bounded by tk_run's hang guard (TK_CONFORM_RUN_SECS), which
+# names itself (TIMEOUT ... rc 142) in the output when it fires.
 rm -f sc_bin
 scout=""
 if "${TKC}" --allow-all --out sc_bin sc.tk >compile.log 2>&1; then
-    scout="$(perl -e 'alarm 10; exec @ARGV' ./sc_bin 2>&1)"
+    scout="$(tk_run ./sc_bin 2>&1)"
 fi
 if [ "${scout}" = "4 9" ]; then
     echo "  PASS: scanner loop — 4 separators, last at 9"
     PASS=$((PASS + 1))
 else
-    echo "  FAIL: scanner loop: got '${scout}' (empty = did not build or did not finish in 10 s)"
+    echo "  FAIL: scanner loop: got '${scout}' (empty = did not build)"
     sed 's/^/      /' compile.log | tail -2
     FAIL=$((FAIL + 1))
 fi

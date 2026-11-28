@@ -18,13 +18,13 @@
 # Negative control: TKC built from integrate/z-wave-1113b (c0a8bee7) --
 # cases 1-3 trap RT003, 4-8 rc=0 (binding untyped); 9-12 green on both.
 #
-# Story: 127.375
+# Story: 127.375, 127.559
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/toke}"
-RUN="${REPO_ROOT}/test/run_test.sh"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
 PASS=0; FAIL=0
 expect() {
@@ -42,8 +42,8 @@ chk() {
 }
 run() {
     printf '%s\nf=main():i64{\nlet c=true;\n%s\n<0};\n' "$H" "$1" > "${WORK}/rb.tk"
-    "${RUN}" 60 "${TKC}" "${WORK}/rb.tk" -o "${WORK}/rb" >/dev/null 2>&1 || { echo build-failed; return; }
-    "${RUN}" 20 "${WORK}/rb" 2>&1 | tr '\n' ' '
+    tk_build "${TKC}" "${WORK}/rb.tk" -o "${WORK}/rb" >/dev/null 2>&1 || { tk_build_failed $?; return; }
+    tk_run "${WORK}/rb" 2>&1 | tr '\n' ' '
 }
 IF='let d=if(c){@("k":s.bytes("ab"))}el{@("k":s.bytes("cd"))};'
 IFF='let d=if(false){@("k":s.bytes("ab"))}el{@("k":s.bytes("cd"))};'

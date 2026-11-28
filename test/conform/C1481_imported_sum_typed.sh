@@ -21,13 +21,13 @@
 # Negative control: TKC built from fix/z171-sum-args-getor-leak (183fb159)
 # -- the E4031/E4032/E4025/E4010 cases red (imported rc 0); controls green.
 #
-# Story: 127.385
+# Story: 127.385, 127.559
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/toke}"
-RUN="${REPO_ROOT}/test/run_test.sh"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
 PASS=0; FAIL=0
 expect() {
@@ -118,8 +118,8 @@ io.println("\(a) \(b) \(l.rs($sh{$ci:5})) \(loc(l.mks())) \(l.rs(w.s)) \(q)");
 <0};
 EOF
 rm -f "${WORK}/r25.bin"
-( cd "${WORK}" && "${RUN}" 60 "${TKC}" a_lib.tk r25.tk -o r25.bin >/dev/null 2>&1 )
-r25="$([ -x "${WORK}/r25.bin" ] && "${RUN}" 20 "${WORK}/r25.bin" 2>&1 | tr '\n' ' ')"
+( cd "${WORK}" && tk_build "${TKC}" a_lib.tk r25.tk -o r25.bin >/dev/null 2>&1 ) || tk_build_failed $?
+r25="$([ -x "${WORK}/r25.bin" ] && tk_run "${WORK}/r25.bin" 2>&1 | tr '\n' ' ')"
 expect "25 well-typed imported sums run" "${r25}" "2 5 5 3 42 3 "
 
 # 26: no fix field on these E4031s

@@ -12,14 +12,14 @@
 #      through to the compile+link pipeline.
 #   3. The default (no-flag) invocation still compiles BOTH files to binaries.
 #
-# Story: 131.37
+# Story: 131.37, 127.559
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
-RUN="${REPO_ROOT}/test/run_test.sh"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 
 PASS=0
 FAIL=0
@@ -70,8 +70,8 @@ mode_check() {
     local name="$1" ma="$2" mb="$3"; shift 3
     local want_rc="${MODE_RC:-0}"
     local out rc=0
-    out="$("${RUN}" 20 "${TKC}" "$@" a.tk b.tk </dev/null 2>/dev/null)" || rc=$?
-    check "${name}: exit ${want_rc}" "${want_rc}" "${rc}"
+    out="$(tk_run "${TKC}" "$@" a.tk b.tk </dev/null 2>/dev/null)" || rc=$?
+    check "${name}: exit ${want_rc}" "${want_rc}" "$(tk_rc "${rc}")"
     local pa pb
     pa="$(printf '%s' "${out}" | grep -nF -m1 -- "${ma}" | cut -d: -f1)"
     pb="$(printf '%s' "${out}" | grep -nF -m1 -- "${mb}" | cut -d: -f1)"
@@ -94,27 +94,27 @@ mode_check "--min"      'm=alpha;' 'm=beta;'  --min
 # --lint: diagnostics go to stdout as JSON when not a tty; a.tk has one hint,
 # b.tk has none — so check file a's hint, exit 0, and no binary. Then --fix
 # --dry-run must print a diff for a.tk and still leave b.tk untouched/no binary.
-LINT_OUT="$("${RUN}" 20 "${TKC}" --lint a.tk b.tk </dev/null 2>/dev/null)" && LRC=0 || LRC=$?
-check "--lint: exit 0" "0" "${LRC}"
+LINT_OUT="$(tk_run "${TKC}" --lint a.tk b.tk </dev/null 2>/dev/null)" && LRC=0 || LRC=$?
+check "--lint: exit 0" "0" "$(tk_rc "${LRC}")"
 check "--lint: reports a.tk" "1" "$(printf '%s\n' "${LINT_OUT}" | grep -c '"file":"a.tk"' | tr -d ' ')"
 check "--lint: no stray binary" "absent" "$([ -e a ] || [ -e b ] && echo present || echo absent)"
-DRY_OUT="$("${RUN}" 20 "${TKC}" --lint --fix --dry-run a.tk b.tk </dev/null 2>&1)" || true
+DRY_OUT="$(tk_run "${TKC}" --lint --fix --dry-run a.tk b.tk </dev/null 2>&1)" || true
 check "--lint --fix --dry-run: diff for a.tk" "1" "$(printf '%s\n' "${DRY_OUT}" | grep -c '^+++ a.tk' | tr -d ' ')"
 check "--lint --fix --dry-run: b.tk untouched" "m=beta;" "$(head -1 b.tk)"
 check "--lint --fix --dry-run: no stray binary" "absent" "$([ -e a ] || [ -e b ] && echo present || echo absent)"
 
 # --check: silent on success; the proof is exit 0 + no binary, and that an
 # error in file b is still reported (both files are checked).
-CRC=0; "${RUN}" 20 "${TKC}" --check a.tk b.tk </dev/null >/dev/null 2>&1 || CRC=$?
-check "--check: exit 0" "0" "${CRC}"
+CRC=0; tk_run "${TKC}" --check a.tk b.tk </dev/null >/dev/null 2>&1 || CRC=$?
+check "--check: exit 0" "0" "$(tk_rc "${CRC}")"
 check "--check: no stray binary" "absent" "$([ -e a ] || [ -e b ] && echo present || echo absent)"
 printf 'm=bad;f=main():i64{<}\n' > bad.tk
-BRC=0; "${RUN}" 20 "${TKC}" --check a.tk bad.tk </dev/null >/dev/null 2>&1 || BRC=$?
-check "--check: error in file 2 is reported (exit 1)" "1" "${BRC}"
+BRC=0; tk_run "${TKC}" --check a.tk bad.tk </dev/null >/dev/null 2>&1 || BRC=$?
+check "--check: error in file 2 is reported (exit 1)" "1" "$(tk_rc "${BRC}")"
 
 # Default mode still compiles every file.
-"${RUN}" 60 "${TKC}" a.tk b.tk </dev/null >/dev/null 2>&1 || true
-check "default mode compiles both files" "a b" "$(ls a b 2>/dev/null | tr '\n' ' ' | sed 's/ $//')"
+DRC=0; tk_build "${TKC}" a.tk b.tk </dev/null >/dev/null 2>&1 || DRC=$?
+check "default mode compiles both files" "a b" "$(ls a b 2>/dev/null | tr '\n' ' ' | sed 's/ $//')$([ "${DRC}" -eq 142 ] && echo " (build $(tk_build_failed 142))")"
 
 echo "--------------------------------------"
 echo "Results: ${PASS} passed, ${FAIL} failed"

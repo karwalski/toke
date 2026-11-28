@@ -19,13 +19,13 @@
 # Negative control: TKC built from fix/z171-sum-args-getor-leak (183fb159)
 # -- cases 1-11 and 13 red (imported rc 0); 12, 14-16 green.
 #
-# Story: 127.384
+# Story: 127.384, 127.559
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/toke}"
-RUN="${REPO_ROOT}/test/run_test.sh"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
 PASS=0; FAIL=0
 expect() {
@@ -89,8 +89,8 @@ i=l:c1480.lib;
 f=main():i64{let w=@(l.mk();l.mk());io.println("\(l.pr(l.mk())) \(l.mk().s) \(l.mk().s.len()) \(l.pi(l.mk().n)) \(w.get(1).s)");<0};
 EOF
 rm -f "${WORK}/r15.bin"
-( cd "${WORK}" && "${RUN}" 60 "${TKC}" a_lib.tk r15.tk -o r15.bin >/dev/null 2>&1 )
-r15="$([ -x "${WORK}/r15.bin" ] && "${RUN}" 20 "${WORK}/r15.bin" 2>&1 | tr '\n' ' ')"
+( cd "${WORK}" && tk_build "${TKC}" a_lib.tk r15.tk -o r15.bin >/dev/null 2>&1 ) || tk_build_failed $?
+r15="$([ -x "${WORK}/r15.bin" ] && tk_run "${WORK}/r15.bin" 2>&1 | tr '\n' ' ')"
 expect "15 well-typed in-place calls run" "${r15}" "3 xy 2 6 xy "
 
 # 16: no fix field on these E4031s

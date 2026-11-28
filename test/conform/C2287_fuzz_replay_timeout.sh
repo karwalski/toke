@@ -19,20 +19,31 @@
 #
 # WHAT IS ASSERTED (a toy harness linked against standalone_main.c that spins
 # forever on an input starting with 'H'):
-#   1. FUZZ_REPLAY_TIMEOUT=1 on [ok-input, hang-input]: exit 70 within 10 s,
-#      stderr names the hanging input, the ok input was replayed first.
+#   1. FUZZ_REPLAY_TIMEOUT=1 on [ok-input, hang-input]: exit 70 and
+#      "TIMEOUT after 1 s on <hang-input>" on stderr.
 #   2. the same inputs without the hang: exit 0, 2 inputs replayed.
 #   3. FUZZ_REPLAY_TIMEOUT=abc: exit 1 with a reason, nothing replayed.
 #   4. the Makefile's fuzz-smoke passes the bound to both engines.
 #
 # Negative control: C2287_MAIN=<file> links another standalone_main.c (the
 # one on main eca5062f or earlier); case 1 is then killed by this script's
-# own 20 s alarm (exit 142) and case 3 replays both inputs.
+# own hang guard (exit 142) and case 3 replays both inputs.
 #
-# Story: 127.545
+# Timing (127.559).  Case 1 also required the run to end within 10 s, an upper
+# bound on a feature that is itself a time bound.  Exit 70 with that line can
+# only come from the driver's own SIGALRM handler (on_alarm), and the N it
+# prints is replay_timeout, the value alarm() was armed with -- so the line is
+# the driver's own report that ITS bound of 1 s fired, which no host load can
+# fake or prevent (load only delays the exit).  The outer alarm is tk_run's
+# hang guard (TK_CONFORM_RUN_SECS, default 120): a driver with no bound runs
+# into it and exits 142, which case 1 names.  The elapsed time is reported,
+# not judged.
+#
+# Story: 127.545, 127.559
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 MAIN_C="${C2287_MAIN:-${REPO_ROOT}/test/fuzz/standalone_main.c}"
 CC="${CC:-cc}"
 PASS=0; FAIL=0
@@ -52,7 +63,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *d, size_t n) {
     return 0;
 }
 CEOF
-if ! "${CC}" -std=c99 -D_GNU_SOURCE -O0 -o "${WORK}/h" "${WORK}/h.c" "${MAIN_C}" > "${WORK}/cc.log" 2>&1; then
+if ! tk_build "${CC}" -std=c99 -D_GNU_SOURCE -O0 -o "${WORK}/h" "${WORK}/h.c" "${MAIN_C}" > "${WORK}/cc.log" 2>&1; then
     fail "toy harness does not build"; head -8 "${WORK}/cc.log" | sed 's/^/        /'
     echo "C2287: ${PASS} passed, ${FAIL} failed"; exit 1
 fi
@@ -64,19 +75,18 @@ now() { perl -MTime::HiRes=time -e 'printf "%.3f", time'; }
 
 # 1. a hanging input fails the run, by name, inside the bound
 t0=$(now)
-FUZZ_REPLAY_TIMEOUT=1 perl -e 'alarm 20; exec @ARGV' "${WORK}/h" "${WORK}/1_ok" "${WORK}/2_hang" \
+FUZZ_REPLAY_TIMEOUT=1 tk_run "${WORK}/h" "${WORK}/1_ok" "${WORK}/2_hang" \
     > "${WORK}/o1" 2> "${WORK}/e1"; rc=$?
 t1=$(now); dt=$(perl -e "printf '%.2f', $t1 - $t0")
-if [ "${rc}" -eq 70 ] && grep -q "fuzz-replay: TIMEOUT after 1 s on ${WORK}/2_hang" "${WORK}/e1" \
-        && perl -e "exit !($t1 - $t0 < 10)"; then
-    pass "1 hanging input: exit 70 after ${dt} s, stderr names it"
+if [ "${rc}" -eq 70 ] && grep -q "fuzz-replay: TIMEOUT after 1 s on ${WORK}/2_hang" "${WORK}/e1"; then
+    pass "1 hanging input: exit 70 from the driver's own 1 s bound (after ${dt} s), stderr names it"
 else
-    fail "1 hanging input: exit ${rc} after ${dt} s (want 70 within 10 s; 142 = killed by the 20 s alarm)"
+    fail "1 hanging input: exit $(tk_rc "${rc}") after ${dt} s (want 70 and the driver's TIMEOUT line)"
     sed 's/^/        /' "${WORK}/e1"
 fi
 
 # 2. inputs that return are unaffected
-FUZZ_REPLAY_TIMEOUT=1 perl -e 'alarm 20; exec @ARGV' "${WORK}/h" "${WORK}/1_ok" "${WORK}/2_ok" \
+FUZZ_REPLAY_TIMEOUT=1 tk_run "${WORK}/h" "${WORK}/1_ok" "${WORK}/2_ok" \
     > "${WORK}/o2" 2> "${WORK}/e2"; rc=$?
 if [ "${rc}" -eq 0 ] && grep -q "2 input(s) replayed" "${WORK}/o2"; then
     pass "2 inputs that return: exit 0, 2 replayed"
@@ -85,7 +95,7 @@ else
 fi
 
 # 3. a malformed bound is refused, not ignored
-FUZZ_REPLAY_TIMEOUT=abc perl -e 'alarm 20; exec @ARGV' "${WORK}/h" "${WORK}/1_ok" \
+FUZZ_REPLAY_TIMEOUT=abc tk_run "${WORK}/h" "${WORK}/1_ok" \
     > "${WORK}/o3" 2> "${WORK}/e3"; rc=$?
 if [ "${rc}" -eq 1 ] && grep -q "FUZZ_REPLAY_TIMEOUT must be" "${WORK}/e3" && ! grep -q "replayed" "${WORK}/o3"; then
     pass "3 FUZZ_REPLAY_TIMEOUT=abc: exit 1 with a reason, nothing replayed"

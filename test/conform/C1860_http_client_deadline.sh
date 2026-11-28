@@ -25,13 +25,13 @@
 # that never answers the ClientHello).
 #   1. no deadline, /drip: $ok 6 bytes after >= 2000 ms (the default is unchanged)
 #   2. deadline 800, /drip: $err "request deadline exceeded (800 ms) after
-#      N of 6 body bytes (Content-Length)" in 600..1900 ms
+#      N of 6 body bytes (Content-Length)" with N <= 2, after >= 600 ms
 #   3. deadline 10000, /drip: $ok 6 (a deadline that is met cuts nothing)
 #   4. deadline 800, /driphead: $err "... before the header block ended"
 #   5. deadline 800, /dripchunk: $err "... before the last chunk of a chunked body"
 #   6. deadline 800, /dripclose: $err "... of a body with no Content-Length"
 #   7. deadline 800, https to the silent listener: $err "... during the TLS
-#      handshake" in under 1900 ms
+#      handshake", after >= 600 ms and well inside the 30 s per-read timeout
 #   8. deadline 0: $err "request deadline exceeded (0 ms) during connect",
 #      and no request reached the server
 #   9. withdeadline returns a copy: the client it was made from, used
@@ -43,13 +43,40 @@
 # http_withdeadline made a no-op (the setting dropped): 2 passed, 7 failed --
 # 2, 5, 6 answer $ok after the whole drip, 4 after 15.5 s, 7 "SSL handshake
 # failed" after the 30 s per-read timeout, 8 reaches the server, 9 the copy
-# reads the whole drip.
+# reads the whole drip (re-measured 2026-11-28, 127.559: the same 2 / 7).
+# Measured 2026-11-28 (127.559): with every deadline check 600 ms late
+# (client_past and client_wait compare against at + 600), 2 fails -- "after 3
+# of 6 body bytes" in 1401 ms, which the old 1900 ms bound passed -- and 8
+# fails; with client_wait polling for the per-read timeout only, 7 fails
+# ("SSL handshake failed" after 30019 ms).
 #
-# Story: 138.24
+# Timing (127.559).  2 and 7 used to require the answer within 1900 ms, an
+# upper bound on a feature that is itself a deadline: under host load the
+# client is only ever LATER, so a correct deadline failed and the bound proved
+# nothing a load-free fact does not.  What they assert now:
+#   2. the message, which the client writes only when its own clock passed the
+#      deadline (client_past / client_wait in http.c), and N <= 2: byte k
+#      leaves the server no sooner than 400*k ms after the request reached it,
+#      which is after the deadline clock started, and the deadline is checked
+#      before every read -- so bytes 3..6 can be read only by a client that
+#      ran past its deadline.  Load slows the server too, which only lowers
+#      N.  A floor of 600 ms keeps it from firing early (load cannot shorten
+#      an elapsed time).
+#   7. nothing arrives on the silent listener, so only a timer can end the
+#      handshake; the message names the deadline, not the per-read timeout,
+#      and MS < SEPARATE_MS (15000, half of the 30000 ms per-read timeout)
+#      tells the deadline's timer from a wait that ignored it and ran to the
+#      per-read timeout.  That bound is a separation of 14 s, not a margin for
+#      scheduling, so it does not scale with TK_CONFORM_RUN_SECS.
+# Every program run is under tk_run's hang guard (TK_CONFORM_RUN_SECS) and the
+# builds under tk_build's (TK_CONFORM_BUILD_SECS).
+#
+# Story: 138.24, 127.559
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/tkc}"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 export TKC_STDLIB_DIR="${C1860_STDLIB:-${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}}"
 PASS=0; FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
@@ -161,13 +188,14 @@ f=main():i64{
 };
 TOKE
 for p in cl cp; do
-    if ! "${TKC}" --allow-all --out "${p}_bin" "${p}.tk" > "${p}.build" 2>&1; then
+    if ! tk_build "${TKC}" --allow-all --out "${p}_bin" "${p}.tk" > "${p}.build" 2>&1; then
         fail "${p}.tk does not build: $(grep -v W1001 "${p}.build" | head -c 400)"
         echo ""; echo "C1860: ${PASS} passed, ${FAIL} failed"; exit 1
     fi
 done
 U="http://127.0.0.1:${HP}"
-run() { ./cl_bin "$@" > out 2>&1; R="$(sed -n 1p out)"; MS="$(sed -n 2p out)"; }
+run() { tk_run ./cl_bin "$@" > out 2>&1; R="$(sed -n 1p out)"; MS="$(sed -n 2p out)"; }
+SEPARATE_MS=15000   # see "Timing": half the client's 30000 ms per-read timeout
 
 run "${U}" /drip -
 if [ "${R}" = "ok 200 6" ] && [ "${MS:-0}" -ge 2000 ]; then pass "1 no deadline: \$ok after the whole drip (${MS} ms)"
@@ -175,8 +203,9 @@ else fail "1 no deadline: '${R}' in ${MS} ms (want ok 200 6, >= 2000 ms)"; fi
 
 run "${U}" /drip 800
 case "${R}" in "err request deadline exceeded (800 ms) after "*" of 6 body bytes (Content-Length)")
-    if [ "${MS:-0}" -ge 600 ] && [ "${MS:-0}" -le 1900 ]; then pass "2 deadline 800 cuts the drip: '${R}' (${MS} ms)"
-    else fail "2 deadline 800: right message, ${MS} ms (want 600..1900)"; fi ;;
+    N="${R#err request deadline exceeded (800 ms) after }"; N="${N%% *}"
+    if [ "${MS:-0}" -ge 600 ] && [ "${N}" -le 2 ] 2>/dev/null; then pass "2 deadline 800 cuts the drip: '${R}' (${MS} ms)"
+    else fail "2 deadline 800: right message, ${N} body bytes read (want <= 2), ${MS} ms (want >= 600)"; fi ;;
 *) fail "2 deadline 800, /drip: '${R}' (${MS} ms)" ;; esac
 
 run "${U}" /drip 10000
@@ -198,9 +227,10 @@ case "${R}" in "err request deadline exceeded (800 ms) after "*" body bytes of a
 *) fail "6 /dripclose: '${R}' (${MS} ms)" ;; esac
 
 run "https://127.0.0.1:${MP}" / 800
-if [ "${R}" = "err request deadline exceeded (800 ms) during the TLS handshake" ] && [ "${MS:-9999}" -le 1900 ]; then
+if [ "${R}" = "err request deadline exceeded (800 ms) during the TLS handshake" ] \
+   && [ "${MS:-0}" -ge 600 ] && [ "${MS:-99999}" -lt "${SEPARATE_MS}" ]; then
     pass "7 a TLS handshake that never completes: '${R}' (${MS} ms)"
-else fail "7 silent TLS peer: '${R}' (${MS} ms)"; fi
+else fail "7 silent TLS peer: '${R}' (${MS} ms; want >= 600 and < ${SEPARATE_MS})"; fi
 
 : > srv.log
 run "${U}" /ok 0
@@ -208,7 +238,7 @@ if [ "${R}" = "err request deadline exceeded (0 ms) during connect" ] && [ ! -s 
     pass "8 deadline 0: '${R}', nothing reached the server"
 else fail "8 deadline 0: '${R}', server saw: $(tr '\n' ' ' < srv.log)"; fi
 
-./cp_bin "${U}" /drip > cpout 2>&1
+tk_run ./cp_bin "${U}" /drip > cpout 2>&1
 if [ "$(sed -n 1p cpout)" = "ok 200 6" ]; then
     case "$(sed -n 2p cpout)" in "err request deadline exceeded (500 ms)"*)
         pass "9 withdeadline returns a copy: the original still reads the whole drip" ;;

@@ -42,10 +42,11 @@
 # NEGATIVE CONTROL: TKC=<a v3.2.0 toke> -- every denial FAILS (the scope is
 # ignored, or, for the connect: form, the flag grants the whole class).
 #
-# Story: 138.19
+# Story: 138.19, 127.559
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 PASS=0; FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
@@ -114,14 +115,14 @@ P="${WORK}/netprobe"
 run() {   # LABEL admit|deny ARGS...
     local label="$1" want="$2"; shift 2
     local rc=0
-    perl -e 'alarm 20; exec @ARGV or exit 127' "$@" >"${WORK}/o" 2>"${WORK}/e" || rc=$?
+    tk_run "$@" >"${WORK}/o" 2>"${WORK}/e" || rc=$?
     if [ "${want}" = admit ] && [ "${rc}" -eq 0 ] && /usr/bin/grep -a -q -- "-done" "${WORK}/o"; then
         pass "${label}: admitted ($(head -1 "${WORK}/o"))"
     elif [ "${want}" = deny ] && [ "${rc}" -eq 1 ] && /usr/bin/grep -a -q "^CAP002: capability 'net'" "${WORK}/e" \
          && ! /usr/bin/grep -a -q -- "-done" "${WORK}/o"; then
         pass "${label}: denied ($(head -1 "${WORK}/e" | cut -c1-100))"
     else
-        fail "${label}: wanted ${want}, got rc=${rc}"; sed 's/^/      | /' "${WORK}/o" "${WORK}/e" | head -4
+        fail "${label}: wanted ${want}, got rc=$(tk_rc "${rc}")"; sed 's/^/      | /' "${WORK}/o" "${WORK}/e" | head -4
     fi
 }
 
@@ -144,7 +145,7 @@ run "4a listen under a connect-only grant" deny "${P}" avail 48115 --allow-net=c
 run "4b connect under a listen-only grant" deny "${P}" connect ws://127.0.0.1:48115/ --allow-net=listen:127.0.0.1:48115
 # 5 listen + accept
 rm -f "${WORK}/acc.out"
-( perl -e 'alarm 20; exec @ARGV or exit 127' "${P}" accept 127.0.0.1:48116 --allow-net=listen:127.0.0.1:48116 \
+( tk_run "${P}" accept 127.0.0.1:48116 --allow-net=listen:127.0.0.1:48116 \
     >"${WORK}/acc.out" 2>"${WORK}/acc.err" ) &
 SRV_PID=$!
 for _ in $(seq 50); do /usr/bin/grep -a -q "^listening" "${WORK}/acc.out" 2>/dev/null && break; sleep 0.1; done
@@ -153,7 +154,7 @@ wait "${SRV_PID}" 2>/dev/null; arc=$?; SRV_PID=""
 if [ "${arc}" -eq 0 ] && /usr/bin/grep -a -q "accept-done true" "${WORK}/acc.out"; then
     pass "5 net.listen + net.accept under listen:127.0.0.1:48116: $(tr '\n' ' ' <"${WORK}/acc.out")"
 else
-    fail "5 net.listen + net.accept: rc=${arc}"; sed 's/^/      | /' "${WORK}/acc.out" "${WORK}/acc.err" | head -4
+    fail "5 net.listen + net.accept: rc=$(tk_rc "${arc}")"; sed 's/^/      | /' "${WORK}/acc.out" "${WORK}/acc.err" | head -4
 fi
 # 6 whole class
 run "6a --allow-net (whole class) portavailable" admit "${P}" avail 48117 --allow-net

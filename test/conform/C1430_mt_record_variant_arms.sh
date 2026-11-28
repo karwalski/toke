@@ -18,13 +18,13 @@
 # Negative control: TKC built from integrate/z-wave-1113b (c0a8bee7) --
 # cases 1-5 red (1, 4 rc=0; 2 is E4010 with a fix; 5 no diagnostic); 6-10 green on both.
 #
-# Story: 127.367
+# Story: 127.367, 127.559
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${TKC:-${REPO_ROOT}/toke}"
-RUN="${REPO_ROOT}/test/run_test.sh"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 if [ ! -x "${TKC}" ]; then echo "FAIL: tkc binary not found at ${TKC} (run 'make' first)"; exit 1; fi
 PASS=0; FAIL=0
 expect() {
@@ -46,8 +46,8 @@ chk() {
 }
 run() {
     printf '%s\nf=main():i64{\n%s\n<0};\n' "$H" "$1" > "${WORK}/r.tk"
-    "${RUN}" 60 "${TKC}" "${WORK}/r.tk" -o "${WORK}/r" >/dev/null 2>&1 || { echo build-failed; return; }
-    "${RUN}" 20 "${WORK}/r" 2>&1 | tr '\n' ' '
+    tk_build "${TKC}" "${WORK}/r.tk" -o "${WORK}/r" >/dev/null 2>&1 || { tk_build_failed $?; return; }
+    tk_run "${WORK}/r" 2>&1 | tr '\n' ' '
 }
 expect "1 record subject, arms named after its fields: E4080" \
   "$(chk 'let m=mt $s{a:1;b:2} {$a:n n+10;$b:n n+20};io.println("\(m)");')" "rc=1 4:E4080 fix=0"

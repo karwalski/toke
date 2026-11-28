@@ -24,12 +24,13 @@
 #
 # Every case compiles and RUNS at -O0..-O3 and asserts stdout.
 #
-# Story: 127.71
+# Story: 127.71, 127.559
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 # The ~/tk/toke/tkc symlink is relinked by any concurrent `make`; $TKC lets a
 # caller pin a resolved binary for the run (131.39).
 TKC="${TKC:-${REPO_ROOT}/tkc}"
@@ -64,14 +65,14 @@ run_case() {
             continue
         fi
         # A stale tag can also spin (strcmp on two garbage pointers never
-        # matches), so cap each run.  macOS ships no coreutils `timeout`;
-        # perl's alarm is always present.
-        out="$(perl -e 'alarm 20; exec @ARGV' ./case_bin 2>&1)" || rc=$?
+        # matches), so cap each run: tk_run's hang guard (TK_CONFORM_RUN_SECS),
+        # which names itself when it fires.
+        out="$(tk_run ./case_bin 2>&1)" || rc=$?
         if [ "${out}" = "${expected}" ]; then
             echo "  PASS: ${name} ${o}"
             PASS=$((PASS + 1))
         else
-            echo "  FAIL: ${name} ${o}: expected [${expected}], got [${out}] (rc ${rc})"
+            echo "  FAIL: ${name} ${o}: expected [${expected}], got [${out}] (rc $(tk_rc "${rc}"))"
             FAIL=$((FAIL + 1))
         fi
     done

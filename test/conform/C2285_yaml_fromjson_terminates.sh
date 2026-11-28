@@ -22,7 +22,8 @@
 # and the output at most a few hundred bytes per input byte.  What converted
 # before converts to exactly the same text.
 #
-# WHAT IS ASSERTED (toke programs, each under a 20 s alarm):
+# WHAT IS ASSERTED (toke programs, each under tk_run's hang guard,
+# TK_CONFORM_RUN_SECS, 127.559):
 #   1. yaml.fromjson / yaml.tojson / yaml.dec+str of the fuzz artifact, of a
 #      sequence nested 400 deep (past the depth cap), of `{"b":[1,2@]}` and
 #      `[1@]`, and of a 60 KiB sequence of 30,000 elements ending in '@':
@@ -38,10 +39,11 @@
 # (~/tk/tmpwork/wt_toke320) and base eca5062f fail every case in 1 (alarm)
 # and pass every control.
 #
-# Story: 127.542
+# Story: 127.542, 127.559
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${REPO_ROOT}/test/conform_timing.sh"   # 127.559: hang guards, not load limits
 TKC="${TKC:-${REPO_ROOT}/tkc}"
 S="${C2285_STDLIB:-${REPO_ROOT}/src/stdlib}"
 export TKC_STDLIB_DIR="${S}"
@@ -83,16 +85,16 @@ if ! "${TKC}" --out p p.tk > p.log 2>&1; then
     echo "C2285: ${PASS} passed, ${FAIL} failed"; exit 1
 fi
 
-# run <name> <file> <want>: the program must print <want> within 20 s (alarm)
-# and 5 s wall.
+# run <name> <file> <want>: the program must print <want> under the hang
+# guard, and within 5 s wall.
 run() {
     local t0 t1 got rc
     t0=$(perl -MTime::HiRes=time -e 'printf "%.3f", time')
-    got="$(perl -e 'alarm 20; exec @ARGV' ./p --allow-read "$2" 2>&1)"; rc=$?
+    got="$(tk_run ./p --allow-read "$2" 2>&1)"; rc=$?
     t1=$(perl -MTime::HiRes=time -e 'printf "%.3f", time')
     local dt; dt=$(perl -e "printf '%.2f', $t1 - $t0")
     if [ "${rc}" -ne 0 ]; then
-        fail "$1: no result (exit ${rc}${rc:+; 142 = killed by the 20 s alarm}) after ${dt} s"
+        fail "$1: no result (exit $(tk_rc "${rc}")) after ${dt} s"
     elif [ "${got}" != "$3" ]; then
         fail "$1: output differs"; printf '        got:  %s\n        want: %s\n' "${got}" "$3"
     elif perl -e "exit !($t1 - $t0 < 5)"; then
@@ -190,7 +192,7 @@ if ! "${TKC}" --out c c.tk > c.log 2>&1; then
     fail "controls: compile"; head -8 c.log | sed 's/^/        /'
 else
     # (trailing blanks stripped: "b: " and "- " end in a space)
-    got="$(perl -e 'alarm 20; exec @ARGV' ./c 2>&1 | sed 's/ *$//')"
+    got="$(tk_run ./c 2>&1 | sed 's/ *$//')"
     if [ "${got}" = "${WANT}" ]; then
         pass "controls: well-formed objects, nested sequences, {}, [], elided elements and empty values on a closer convert unchanged"
     else
