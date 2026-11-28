@@ -55,7 +55,7 @@ toke reserves exactly 14 identifiers as keywords (`docs/spec/toke-spec-v0.4.md` 
 | `as` | Explicit type cast | No implicit conversions. Every cast is visible in the source. |
 | `rt` | Return (long form) | Equivalent to the `<` operator. Two characters instead of six. |
 | `mt` | Match expression | `mt expr{$variant:binding result; ...}` -- exhaustive pattern matching on sum types and error results. |
-| `sc` | Scope block (structured concurrency) | Reserved in the lexer keyword table; the construct is specified in `docs/spec/memory-model.md` and lands in v0.5. |
+| `sc` | Structured concurrency: the scope block, the task and the handle type | `sc{...}` opens a scope, `sc f(x)` starts the call as a task in it and yields a handle of type `sc():T`, and `h()` reads the typed result. Every exit from the block joins its tasks, so a join cannot be forgotten. One keyword, no import (`docs/spec/semantics.md` §7.1, ADR-0017; implementation stories 127.569-127.572). |
 
 Single lowercase characters for declarations (`m`, `f`, `t`, `i`). Two-character lowercase for control flow, match and scope (`if`, `el`, `lp`, `br`, `mt`, `sc`). Three-character lowercase for bindings (`let`, `mut`). Every keyword is as short as it can be while remaining unambiguous.
 

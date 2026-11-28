@@ -7,6 +7,7 @@ order: 2
 
 **Status:** Normative stub (Story 2.12.2)
 **Profile:** 1 (v0.1)
+**Amended:** 2026-11-28 (story 127.568): §1.3, §2.6, §3.1, §4.3, §7.1 and Appendix A state the `sc` structured-concurrency construct of ADR-0017; each new rule names the story that implements it.
 
 This document defines the static semantics of the toke language: the type system,
 name resolution rules, and type checking judgements that a conforming implementation
@@ -92,7 +93,7 @@ signatures. Use of `*T` in a function with a body is a compile error
 | Type syntax | Kind     | Description                               |
 |-------------|----------|-------------------------------------------|
 | `t=$name{}`  | Struct   | Named product type with ordered fields     |
-| `Task<T>`   | Task     | Async task handle yielding type T          |
+| `sc():T`    | Task handle | Handle of a task started by `sc E`, yielding T |
 | `func`      | Function | First-class function reference (internal)  |
 
 **Struct.** Declared via `t=$name{field1:$type1; field2:$type2; ...}`.
@@ -104,9 +105,16 @@ once, in any order; fields have no default value. Leaving a field out is
 `[errors.md E4077]` and giving one twice is `[errors.md E4078]` (127.365,
 127.366). A sum-type literal names one variant and is not subject to this rule.
 
-**Task.** The type `Task<T>` is the return type of `spawn(f)` where `f`
-returns type `T`. `Task` is not directly writable in source; it is
-inferred from `spawn` expressions. `await(t)` on a `Task<T>` yields type `T`.
+**Task handle.** The type `sc():T` is the type of a task expression `sc E`
+whose call `E` has type `T` (ADR-0017 D4.1). `T` is any type, including
+`void` and an error union. Reading the handle, `h()`, yields `T` and joins
+that one task (Section 7.1). A handle type may be written only in a local
+`let` annotation and in a typed-empty literal (`@(sc():i64)`,
+`@($str:sc():i64)`); written anywhere else it is `[errors.md E4083]`
+(Section 7.1.6). A handle is not a `():T` function value, and neither
+converts to the other. *Implemented by 127.569 (parser) and 127.570
+(checker); until they land the reference compiler has no handle type
+(Section 7.1, status note).*
 
 ### 1.4 The Unknown Type
 
@@ -287,7 +295,10 @@ For a call expression `f(a1, a2, ...)`:
 4. Extra arguments beyond the declared parameters are inferred but not checked
    against any parameter type (they are silently accepted in the legacy profile).
 
-**Special call forms** are described in Section 7.1 (`spawn`, `await`).
+**Special call forms** are described in Section 7.1: the task expression
+`sc E`, whose operand is a call that runs as a task, and the read `h()` of a
+task handle `h : sc():T`, which has type `T` and takes no arguments (`h(x)`
+is `[errors.md E4026]`).
 
 ### 2.7 Field Access Expressions
 
@@ -352,7 +363,9 @@ Two types are *equal* according to the following rules:
 5. **Arrays:** `@$t == @$u` iff `T == U`, or if either element type is `unknown`.
 6. **Maps:** `@($k1:$v1) == @($k2:$v2)` iff `K1 == K2` and `V1 == V2`, or if either
    key or value type is `unknown`.
-7. **Tasks:** `Task<T> == Task<U>` iff `T == U`.
+7. **Task handles:** `sc():T == sc():U` iff `T == U`. A handle type is never
+   equal to a function type: `sc():T != ():T` (ADR-0017 D4.1; implemented
+   by 127.570).
 8. **Error unions:** `T1!E1 == T2!E2` iff `T1 == T2`, or if either inner type
    is `unknown`.
 9. **Functions:** Two function types are equal iff their return types are equal.
@@ -423,11 +436,20 @@ assignments both resolve this way [toke-spec-v0.4 §I, story 127.196].
 The following identifiers are seeded into the module scope before any
 user-declared names:
 
-    true   false   bool   i64   u64   f64   $str   void   spawn   await   Task
+    true   false   bool   i64   u64   f64   $str   void
 
 These cannot be shadowed by module-level declarations (since they occupy the
 same scope), but they CAN be shadowed by function parameters or local bindings
 in inner scopes.
+
+`spawn`, `await` and `Task` are not predefined (ADR-0017, 2026-11-28). The
+concurrency construct is spelled with the keyword `sc` (Section 7.1), so
+`spawn` is an ordinary identifier. The only exception is the withdrawal
+diagnostic: `spawn` followed by `&` or `fn` is `[errors.md E2038]`, a
+spelling that is never valid otherwise (ADR-0017 D7.2). *Implemented by
+127.569 and 127.572; until they land, the reference compiler treats `spawn`
+at the start of an expression inside an `sc` block as the retired spawn
+form.*
 
 ### 4.4 Forward Declaration
 
@@ -646,34 +668,209 @@ Violation: `[errors.md E2001]`.
 
 ## 7. Special Forms
 
-### 7.1 Concurrency: spawn and await
+### 7.1 Concurrency: the `sc` construct
 
-**spawn(f):**
-- `f` must be a declared function (not an arbitrary expression).
-  Violation: `[errors.md E4050]`.
-- In the legacy profile, `f` must be nullary (zero parameters).
-  Violation: `[errors.md E4052]`.
-- The result type is `Task<T>` where `T` is the return type of `f`.
-  If `f` has no return type annotation, `T` is `void`.
+`sc` is toke's one concurrency construct. It needs no import. This section is
+normative per ADR-0017 (`docs/decisions/ADR-0017-structured-concurrency.md`,
+accepted 2026-11-28, including its "Owner resolutions", which override its
+body where they differ). It replaces the `spawn(f)` / `Task<T>` / `await`
+text that stood here, which no compiler has implemented since D4=B (story
+10.3.11).
 
-**await(t):**
-- `t` must have type `Task<T>`. Violation: `[errors.md E4051]`.
-- The result type is `T` (the inner type of the task).
+> **Implementation status (2026-11-28).** The rules below are not yet
+> implemented by the reference compiler. Each is marked with the story that
+> implements it: **127.569** (parser), **127.570** (checker), **127.571**
+> (lowering and runtime) and **127.572** (withdrawal of `std.task`). Until
+> those stories land, the shipped compiler accepts the earlier form instead
+> (an `sc{ }` block holding `spawn` of a `():T` function value, results read
+> through `std.task`), which 127.572 withdraws. The productions below move
+> into `docs/spec/grammar.ebnf` and the GBNF grammars with 127.569. The
+> examples in this section are therefore fenced as `text`, not as compiled
+> toke.
 
-`spawn` and `await` are predefined identifiers, not keywords. They can
-theoretically be shadowed (Section 4.5), though doing so is not recommended.
+#### 7.1.1 Forms
 
-> **As implemented (127.549):** the reference compiler has no `await` and no
-> `Task<T>` (E4050-E4052 were removed). `spawn f` is accepted only inside an
-> `sc{ }` block and yields an `i64` task handle; `f` must be a function value
-> taking no parameters (`&name`, a closure), else E4081, which also covers
-> the operand of `task.spawn` (std.task). Reconciling this section with the
-> implementation is story 127.553.
+One keyword spells the block, the task and the handle type:
 
-> **Note:** `spawn`, `await`, and `Task` are default syntax additions to the language.
-> They do not yet appear in the main spec's reserved identifier list (Section 14).
-> Their semantics are defined here based on the reference compiler implementation
-> and are subject to change when formally incorporated into the main spec.
+```text
+ScopeStmt  = 'sc' '{' StmtList '}' ;          (* statement: opens a scope   *)
+ScTaskExpr = 'sc' CallExpr ;                  (* expression: starts a task  *)
+ScType     = 'sc' '(' ')' ':' Type ;          (* the handle's type          *)
+```
+
+The parser tells the block from a task by the token after `sc`: `{` opens a
+block, anything else starts a task expression. That is one token of
+lookahead, so the grammar stays backtrack-free and context-free. *Parser:
+127.569.*
+
+#### 7.1.2 The block
+
+`sc{ ... }` is a statement with no value. A result leaves it as a plain value:
+by assigning an outer `mut` binding (`total=total+h();`) or by returning it
+(`<h()`). An `sc` block may contain another `sc` block, directly or inside a
+function that one of its tasks calls; the inner block joins before the outer
+one can.
+
+#### 7.1.3 Starting a task
+
+For `sc E`:
+
+1. `E` must be a call: a call of a named function, of a function value, a
+   receiver method call, or a call of an immediately applied closure
+   (`sc work(x)`, `sc g()`, `sc fn():i64{<a+b}()`). Otherwise it is
+   `[errors.md E4085]`, with no `fix`. *Checker: 127.570.*
+2. The callee and the arguments are evaluated on the starting thread, left to
+   right, exactly as for an ordinary call. Only the call itself runs on the
+   task. *Lowering: 127.571.*
+3. The type of `sc E` is `sc():T`, where `T` is the type `E` would have as a
+   call (Section 1.3). *Checker: 127.570.*
+4. A task belongs to the innermost `sc` block **of its own function body**. A
+   task expression that is not inside an `sc` block of its own function body
+   is `[errors.md E4082]`. A closure's body is a function body, so a task
+   expression in a closure needs an `sc` block in that closure. The checker
+   decides this, not the parser. *Checker: 127.570.*
+5. A task started only for its effect may stand as a statement (`sc log(x);`)
+   and is still joined (Section 7.1.5). A fallible one may not
+   (Section 7.1.7).
+
+#### 7.1.4 Reading a result
+
+A handle `h : sc():T` is read by calling it: `h()` has type `T`.
+
+- Reading joins that one task. If the task is still queued, the reading
+  thread takes it off the queue and runs it itself; if it is running, the
+  reader waits for it to complete without spinning. *Lowering and runtime:
+  127.571.*
+- Reading again gives the same value. The task is not run again.
+- `h(x)` is `[errors.md E4026]` (wrong argument count). A handle used as an
+  operand of an arithmetic or comparison operator, in a string
+  interpolation, or with `as` is `[errors.md E4031]`: a handle has no value
+  but its result. *Checker: 127.570.*
+- A result crosses back to the reader under the return rule
+  (`memory-model.md` §2.3): a scalar by value, a heap value by reference to
+  the same allocation.
+
+#### 7.1.5 Join semantics
+
+1. **Every exit joins.** Leaving an `sc` block on any path joins every task
+   started in it: falling off the end, `<` / `rt` (after the returned value is
+   evaluated, so the value may read handles), `<` in an `mt` arm, `br` out of
+   an enclosing `lp`, and `!` propagation. *Lowering: 127.571.*
+2. **Order.** The join waits for all of the block's tasks. Tasks share no
+   mutable state (`memory-model.md` §3.2), so the order in which tasks
+   complete cannot change any value.
+3. **A trap ends the program.** A trap (RT002-RT010) in a task aborts the
+   process, as it does on the main thread. No join is attempted, and nothing
+   partial is observable after the abort. A task whose descriptor cannot be
+   allocated traps RT011 when it is started; no task result is ever a
+   sentinel value. *Runtime: 127.571.*
+4. **No deadlock on a join.** A thread that joins a block, or reads a handle,
+   runs that block's queued tasks itself, so every join makes progress even
+   when no worker is free, including for nested blocks. Handles cannot be
+   passed or captured (Section 7.1.6), so a task cannot wait on a sibling and
+   joins form no cycle. *Runtime: 127.571.*
+
+#### 7.1.6 Confinement
+
+A value whose type contains a handle type (a handle, or an array or map
+holding handles) may not outlive the innermost `sc` block that started its
+task. Every route out is `[errors.md E4083]`, with no `fix`
+(*checker: 127.570*):
+
+- writing `sc():T` in a function parameter, a return type, a record field, a
+  function type, a map key, or a module-level binding (it may be written only
+  in a local `let` annotation and in a typed-empty literal);
+- `<` returning it;
+- assigning it, or a collection updated with it (`xs=xs.append(h)`), to a
+  binding declared outside the innermost `sc` block that started the task;
+- passing it as an argument to any call (a user function, a closure, a stdlib
+  function, or a task's call). The receiver of a collection method
+  (`hs.append(h)`, `hs.get(i)`, `hs.len`) is not an argument;
+- capturing it in a closure.
+
+Handles are therefore lexically confined, and there is no run-time "used
+after its scope" state. A task that depends on another's result reads it
+first and passes the value: `let a=h(); let k=sc next(a);`.
+
+#### 7.1.7 Errors from tasks
+
+1. **A fallible task's error is its result.** For `f=load(p:str):$doc!$ioerr`,
+   `sc load(p)` has type `sc():$doc!$ioerr`, and `h()` is a `$doc!$ioerr`. It
+   is unwrapped like any union (Section 5): `h()!`, `mt h(){..}`, or a
+   `let r=h();` that is later matched. Using it as a `$doc` is
+   `[errors.md E4031]`. The error reaches the reader with its payload, as if
+   the reader had made the call. *Checker: 127.570; error state carried
+   across threads: 127.571.*
+2. **A fallible task's result must be read on every path.** When `sc` starts a
+   call whose type is an error union, the handle must be read (`h()`, or a
+   read of the element of the collection it was put in) **on every path
+   through its block**. A task that stands as a statement, a handle never
+   read, and a handle read on some paths only are `[errors.md E4084]`, with
+   no `fix`: whether the read should be `!` or `mt` is the program's choice
+   (ADR-0017 owner resolution 5, which replaces the flow-insensitive rule of
+   ADR D3.2). *Checker: 127.570.*
+3. **The block does not fail by itself.** No error is raised implicitly at
+   the block's `}`. E4084 makes an unread error a compile error instead.
+4. **`!` inside the block** returns the error after the join
+   (Section 7.1.5). Tasks still running when it fires run to completion
+   first.
+5. **No cancellation.** Every task started runs to completion exactly once.
+   There is no cancellation on the first error, on an early exit, or by
+   request. On an early exit the block still waits for every task it started.
+
+#### 7.1.8 Side effects of concurrent tasks
+
+The side effects of concurrent tasks (output, file writes) interleave in an
+unspecified order. This is an unspecified order among defined outcomes, not
+undefined behaviour. Each single output write is atomic: the text of one
+write (one `io.println`, for example) is never interleaved with another
+task's output, so no line is torn (ADR-0017 owner resolution 7). The compiler
+emits no lint for output from tasks. *Runtime: 127.571; the atomicity of
+every output function is audited by story 127.576.*
+
+#### 7.1.9 Tasks and `{arena}` blocks
+
+A task expression inside an `{arena}` block (Section 7.3) must belong to an
+`sc` block that is also inside that `{arena}` block. Otherwise it is
+`[errors.md E5003]`, with no `fix`: the region would be released at the
+`{arena}` exit while the task could still read values captured from it
+(ADR-0017 D5.4, ADR-0016 D4 E5). *Checker: 127.570.*
+
+#### 7.1.10 The withdrawn surface
+
+The `std.task` module (`task.scope`, `task.spawn`, `task.awaitall`,
+`task.result`, `task.cancel`) and the `spawn` form are withdrawn
+(ADR-0017 D7). Each is `[errors.md E2038]`, whose message names the `sc`
+replacement (*withdrawal: 127.572*):
+
+- an `i=..:std.task;` import, and each `task.*` call through such an alias,
+  with no `fix` (the rewrite moves statements into a block);
+- `spawn X`, with the `fix` `sc name()` when `X` is `&name` and `sc X()` when
+  `X` is a value the checker types `():T`; no `fix` otherwise.
+
+`[errors.md E4081]` (operand of `task.spawn` / `spawn` not a `():T` value)
+retires with that surface: its number and meaning are kept and it is no
+longer emitted. E4050, E4051 and E4052 (spawn / await rules removed under
+D4=B) stay retired. None of the four is reused for a rule of this section.
+
+#### 7.1.11 Example
+
+```text
+m=demo;
+i=io:std.io;
+f=count(path:str):i64{<path.len};
+f=main():i64{
+  let paths=@("a.txt";"bb.txt";"ccc.txt");
+  let total=mut.0;
+  sc{
+    let hs=mut.@(sc():i64);
+    lp(let i=0;i<paths.len;i=i+1){hs=hs.append(sc count(paths.get(i)))};
+    lp(let i=0;i<hs.len;i=i+1){total=total+hs.get(i)()};
+  };
+  io.println("\(total)");
+  <0;
+};
+```
 
 ### 7.2 FFI: Extern Functions
 
@@ -849,20 +1046,34 @@ The following error codes are referenced by this specification:
 | E2031 | 6.4        | Circular import detected                    |
 | E2035 | 6.3        | Malformed version string                    |
 | E2037 | 6.3        | Version conflict between imports            |
+| E2038 | 4.3, 7.1.10 | Use of the withdrawn concurrency surface (`std.task`, `spawn`); the construct is `sc` (planned: 127.572) |
 | E3011 | 4.6        | Identifier not declared                     |
 | E3012 | 4.5        | Identifier already declared in scope        |
 | E3020 | 5.2        | `!` on non-error-union value                |
 | E4010 | 8.2        | Non-exhaustive match                        |
 | E4011 | 8.1        | Match arms have inconsistent types          |
 | E4025 | 2.7, 1.3   | Struct has no field with that name          |
-| E4031 | 2.3-2.10   | Type mismatch                               |
+| E4026 | 2.6, 7.1.4 | Wrong argument count (includes `h(x)` on a task handle) |
+| E4031 | 2.3-2.10, 7.1.4, 7.1.7 | Type mismatch (includes a task handle used as a value) |
 | E4043 | 1.2, 10    | Inconsistent types in map literal           |
-| E4050 | 7.1        | spawn argument not callable                 |
-| E4051 | 7.1        | await argument not a Task                   |
-| E4052 | 7.1        | Spawned function has parameters             |
+| E4050 | 7.1.10     | Retired (D4=B): spawn argument not callable; never reused |
+| E4051 | 7.1.10     | Retired (D4=B): await argument not a Task; never reused |
+| E4052 | 7.1.10     | Retired (D4=B): spawned function has parameters; never reused |
 | E4080 | 8.1        | Match on a record value names variants      |
-| E4081 | 7.1        | task.spawn / spawn operand not a `():T` value |
+| E4081 | 7.1.10     | task.spawn / spawn operand not a `():T` value; retired with `std.task` (127.572), number and meaning kept |
+| E4082 | 7.1.3      | Task expression `sc E` not inside an `sc` block of its own function body (planned: 127.570) |
+| E4083 | 1.3, 7.1.6 | Task handle escapes the `sc` block that started it (planned: 127.570) |
+| E4084 | 7.1.7      | Fallible task's result not read on every path through its block (planned: 127.570) |
+| E4085 | 7.1.3      | Operand of an `sc` task is not a call (planned: 127.570) |
 | E5001 | 7.3        | Value escapes arena scope                   |
+| E5003 | 7.1.9      | Task inside an `{arena}` block belongs to an `sc` block outside it (planned: 127.570) |
+
+Codes marked *planned* are specified here before the compiler defines them.
+Their `docs/reference/errors.md` and `docs/spec/errors.md` entries land with
+the story that defines them in `src/` (127.570 for E4082-E4085 and E5003,
+127.572 for E2038), because `make check-error-codes` rejects a documented code
+that `src/` does not define. RT011 (a task descriptor could not be allocated,
+Section 7.1.5) is a run-time trap and lands with 127.571.
 
 ---
 
